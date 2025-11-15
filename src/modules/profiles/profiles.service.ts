@@ -69,7 +69,7 @@ export class ProfilesService {
 
   async update(
     userId: string,
-    updateProfileDto: UpdateProfileDto,
+    updateProfileDto: UpdateProfileDto & Record<string, any>, // Accept all fields
   ): Promise<Profile> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new NotFoundException('User not found');
@@ -85,15 +85,44 @@ export class ProfilesService {
     // This allows users to clear fields by sending empty values
     const updateData: Record<string, any> = { user: userId };
     
+    // CRITICAL: Process ALL fields from DTO - don't skip any
+    // List of all valid profile fields to ensure we process everything
+    const validProfileFields = [
+      'firstName', 'lastName', 'gender', 'dateOfBirth', 'nationality',
+      'city', 'countryOfResidence', 'education', 'occupation',
+      'religiosityLevel', 'religion', 'maritalStatus', 'marriageType',
+      'polygamyAcceptance', 'compatibilityTest', 'about',
+      'guardianName', 'guardianContact'
+    ];
+    
+    // Process all valid profile fields
+    validProfileFields.forEach((fieldName) => {
+      const value = updateProfileDto[fieldName];
+      // Include ALL fields - even null, undefined, or empty strings
+      if (value === null || value === undefined) {
+        // For null/undefined, set to empty string to clear the field
+        updateData[fieldName] = '';
+      } else if (typeof value === 'string') {
+        // For strings, always include (even if empty after trim)
+        const trimmed = value.trim();
+        updateData[fieldName] = trimmed;
+      } else {
+        // For non-strings (numbers, booleans, etc.), include as-is
+        updateData[fieldName] = value;
+      }
+    });
+    
+    // Also process any other fields that might be in the DTO (for safety)
     Object.entries(updateProfileDto).forEach(([key, value]) => {
-      // Include all fields that are provided (even empty strings)
+      // Skip if already processed or if it's an internal field
+      if (validProfileFields.includes(key) || key === 'user' || key === 'id') {
+        return;
+      }
+      // Include other valid fields
       if (value !== null && value !== undefined) {
         if (typeof value === 'string') {
-          // Include all strings, even empty ones (allows clearing fields)
-          const trimmed = value.trim();
-          updateData[key] = trimmed; // Allow empty strings
+          updateData[key] = value.trim();
         } else {
-          // For non-strings (numbers, booleans, etc.), include as-is
           updateData[key] = value;
         }
       }

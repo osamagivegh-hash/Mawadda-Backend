@@ -58,19 +58,24 @@ export class ProfilesController {
     @Param('userId') userId: string,
     @Body(
       new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: false, // Allow extra fields but ignore them
+        whitelist: false, // CRITICAL: Don't whitelist - accept all fields
+        forbidNonWhitelisted: false,
         transform: true,
-        skipMissingProperties: false, // Don't skip missing properties
-        skipNullProperties: false,   // Don't skip null properties  
-        skipUndefinedProperties: false, // Don't skip undefined properties
+        skipMissingProperties: false,
+        skipNullProperties: false,
+        skipUndefinedProperties: false,
+        stopAtFirstError: false,
         transformOptions: {
           enableImplicitConversion: true,
         },
       }),
     )
-    updateProfileDto: UpdateProfileDto,
+    updateProfileDto: UpdateProfileDto & Record<string, any>, // Allow extra fields
   ) {
+    // Log what we received
+    console.log('=== CONTROLLER RECEIVED ===');
+    console.log('DTO keys:', Object.keys(updateProfileDto));
+    console.log('DTO:', JSON.stringify(updateProfileDto, null, 2));
     return this.profilesService.update(userId, updateProfileDto);
   }
 

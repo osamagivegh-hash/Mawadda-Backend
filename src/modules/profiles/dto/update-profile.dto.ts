@@ -7,6 +7,8 @@ import {
 } from 'class-validator';
 
 export class UpdateProfileDto {
+  // All fields are optional and accept empty strings
+  // @IsOptional() allows undefined, and @IsString() accepts empty strings
   @IsOptional()
   @IsString()
   @MaxLength(120)
