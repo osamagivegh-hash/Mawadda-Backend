@@ -75,6 +75,12 @@ export class ProfilesService {
       throw new NotFoundException('User not found');
     }
 
+    // LOG: Debug what's being received
+    this.logger.debug(`=== PROFILE UPDATE DEBUG ===`);
+    this.logger.debug(`User ID: ${userId}`);
+    this.logger.debug(`Received DTO keys: ${Object.keys(updateProfileDto)}`);
+    this.logger.debug(`Received DTO:`, JSON.stringify(updateProfileDto, null, 2));
+
     // Build update object - include all provided fields, including empty strings
     // This allows users to clear fields by sending empty values
     const updateData: Record<string, any> = { user: userId };
@@ -98,7 +104,10 @@ export class ProfilesService {
       updateData.dateOfBirth = new Date(updateData.dateOfBirth);
     }
 
-    this.logger.debug(`Updating profile for user ${userId} with fields: ${Object.keys(updateData).join(', ')}`);
+    this.logger.debug(`=== FINAL UPDATE DATA ===`);
+    this.logger.debug(`Update data keys: ${Object.keys(updateData)}`);
+    this.logger.debug(`Update data:`, JSON.stringify(updateData, null, 2));
+    this.logger.debug(`Updating profile for user ${userId} with ${Object.keys(updateData).length} fields`);
 
     const updated = await this.profileModel
       .findOneAndUpdate(

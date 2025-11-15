@@ -61,6 +61,9 @@ export class ProfilesController {
         whitelist: true,
         forbidNonWhitelisted: false, // Allow extra fields but ignore them
         transform: true,
+        skipMissingProperties: false, // Don't skip missing properties
+        skipNullProperties: false,   // Don't skip null properties  
+        skipUndefinedProperties: false, // Don't skip undefined properties
         transformOptions: {
           enableImplicitConversion: true,
         },
