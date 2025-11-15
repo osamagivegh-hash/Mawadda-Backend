@@ -75,19 +75,17 @@ export class ProfilesService {
       throw new NotFoundException('User not found');
     }
 
-    // Build update object - only include fields that are actually provided and not empty
-    // This prevents overwriting existing data with empty strings
+    // Build update object - include all provided fields, including empty strings
+    // This allows users to clear fields by sending empty values
     const updateData: Record<string, any> = { user: userId };
     
     Object.entries(updateProfileDto).forEach(([key, value]) => {
-      // Only include the field if it's not null, not undefined, and not empty string
+      // Include all fields that are provided (even empty strings)
       if (value !== null && value !== undefined) {
         if (typeof value === 'string') {
-          // For strings, only include if not empty after trim
+          // Include all strings, even empty ones (allows clearing fields)
           const trimmed = value.trim();
-          if (trimmed.length > 0) {
-            updateData[key] = trimmed;
-          }
+          updateData[key] = trimmed; // Allow empty strings
         } else {
           // For non-strings (numbers, booleans, etc.), include as-is
           updateData[key] = value;
