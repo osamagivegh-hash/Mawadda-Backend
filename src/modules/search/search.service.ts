@@ -28,58 +28,8 @@ export class SearchService {
     private readonly userModel: Model<UserDocument>,
   ) {}
 
-  /**
-   * Normalize gender values to standard English format
-   * Converts Arabic values, corrupted values, and various formats to "male" or "female"
-   */
-  private normalizeGender(gender: string | null | undefined): string | null {
-    if (!gender) return null;
-    
-    const trimmed = gender.trim().toLowerCase();
-    
-    // Map Arabic values to English
-    const arabicToEnglish: Record<string, string> = {
-      'أنثى': 'female',
-      'أنثي': 'female', // variant with different diacritics
-      'ذكر': 'male',
-      'ذكور': 'male',
-    };
-    
-    // Direct match for Arabic
-    if (arabicToEnglish[trimmed]) {
-      return arabicToEnglish[trimmed];
-    }
-    
-    // Handle corrupted values - check if it starts with "mal" or "fem"
-    if (trimmed.startsWith('mal') || trimmed.includes('mal')) {
-      return 'male';
-    }
-    if (trimmed.startsWith('fem') || trimmed.includes('fem')) {
-      return 'female';
-    }
-    
-    // Direct English values
-    if (trimmed === 'male' || trimmed === 'm') {
-      return 'male';
-    }
-    if (trimmed === 'female' || trimmed === 'f') {
-      return 'female';
-    }
-    
-    // If we can't normalize, return null
-    return null;
-  }
-
-  /**
-   * Normalize input gender from user (accepts both English and Arabic)
-   */
-  private normalizeInputGender(gender: string): string {
-    const normalized = this.normalizeGender(gender);
-    if (!normalized) {
-      throw new BadRequestException(`Invalid gender value: "${gender}". Must be "male", "female", "ذكر", or "أنثى"`);
-    }
-    return normalized;
-  }
+  // Gender normalization methods removed - gender is now automatically determined
+  // from the logged-in user's profile (male users search for females, female users search for males)
 
   /**
    * Debug method to check database content
@@ -125,23 +75,40 @@ export class SearchService {
     
     try {
       // Validate required fields
-      if (!filters.gender) {
-        console.log('⚠️ VALIDATION: Gender is required but not provided');
-        throw new BadRequestException('Gender is required for search');
-      }
-
       if (!filters.minAge && !filters.maxAge) {
         console.log('⚠️ VALIDATION: Age range is required but not provided');
         throw new BadRequestException('Age range (minAge or maxAge) is required for search');
       }
 
-      // Normalize input gender
-      const normalizedGender = this.normalizeInputGender(filters.gender);
-      console.log(`Gender normalization: "${filters.gender}" → "${normalizedGender}"`);
+      // Validate that we have a user ID to determine gender
+      if (!excludeUserId || !Types.ObjectId.isValid(excludeUserId)) {
+        throw new BadRequestException('User ID is required to determine search gender');
+      }
+
+      // Fetch current user and their profile to determine target gender
+      const currentUser = await this.userModel.findById(excludeUserId).lean().exec();
+      if (!currentUser) {
+        throw new BadRequestException('Current user not found');
+      }
+
+      const currentProfile = await this.profileModel
+        .findOne({ user: new Types.ObjectId(excludeUserId) })
+        .lean()
+        .exec();
+
+      if (!currentProfile?.gender) {
+        throw new BadRequestException('User profile gender is missing. Please complete your profile first.');
+      }
+
+      // Determine target search gender: male users search for females, female users search for males
+      const targetGender = currentProfile.gender === 'male' ? 'female' : 'male';
+      
+      console.log('Current user gender:', currentProfile.gender);
+      console.log('Target search gender:', targetGender);
 
       // Build simple profile filter (no aggregation pipeline)
       const profileFilter: Record<string, unknown> = {
-        gender: normalizedGender,
+        gender: targetGender,
       };
 
       // Convert age range to dateOfBirth range
@@ -213,7 +180,7 @@ export class SearchService {
         console.log(`Adding keyword filter: "${keyword}"`);
       }
 
-      console.log('SEARCH PROFILE FILTER:', JSON.stringify(profileFilter, null, 2));
+      console.log('Final profile filter:', JSON.stringify(profileFilter, null, 2));
 
       // Query profiles directly
       const profiles = await this.profileModel.find(profileFilter).lean().exec();

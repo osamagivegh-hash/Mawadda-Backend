@@ -19,11 +19,7 @@ export class SearchController {
     @Req() request: RequestWithUser,
     @Query() filters: SearchMembersDto,
   ) {
-    // Validate required fields
-    if (!filters.gender) {
-      throw new BadRequestException('Gender is required for search');
-    }
-
+    // Validate required fields (gender is now automatically determined from user profile)
     if (!filters.minAge && !filters.maxAge) {
       throw new BadRequestException('Age range (minAge or maxAge) is required for search');
     }

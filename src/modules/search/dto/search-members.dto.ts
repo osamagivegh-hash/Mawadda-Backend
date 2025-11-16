@@ -11,9 +11,9 @@ import {
 import { UserRole } from '../../users/schemas/user.schema';
 
 export class SearchMembersDto {
-  // MANDATORY: Gender is required for search
-  @IsString()
-  gender: string;
+  // Gender is now automatically determined from logged-in user's profile
+  // Male users search for females, female users search for males
+  // No gender field needed in DTO
 
   @IsOptional()
   @IsString()
