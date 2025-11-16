@@ -16,18 +16,49 @@ export class ProfilesService {
     private readonly uploadsService: UploadsService,
   ) {}
 
+  /**
+   * Normalizes a raw Mongo profile document (plain object or Mongoose document)
+   * so that:
+   * - it always exposes `id` as a string
+   * - it does not expose the internal `_id` field
+   */
+  private mapProfile<T extends Record<string, any> | null>(
+    doc: T,
+  ): (Profile & { id: string }) | null {
+    if (!doc) return null;
+
+    // Handle both Mongoose documents and plain objects
+    const plain: Record<string, any> =
+      typeof (doc as any).toObject === 'function'
+        ? (doc as any).toObject()
+        : { ...(doc as any) };
+
+    const rawId = plain._id ?? plain.id;
+    if (rawId) {
+      plain.id =
+        typeof rawId === 'string'
+          ? rawId
+          : (rawId as { toString: () => string }).toString();
+    }
+    delete plain._id;
+
+    return plain as Profile & { id: string };
+  }
+
   async create(userId: string, createProfileDto: CreateProfileDto): Promise<Profile> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new NotFoundException('User not found');
     }
 
     // Check if profile already exists (defensive fix for duplicate requests)
-    const existing = await this.profileModel.findOne({ user: userId }).lean().exec();
+    const existing = await this.profileModel.findOne({ user: userId }).exec();
     if (existing) {
       // If profile exists, return it instead of throwing error (idempotent behavior)
       // This handles duplicate POST requests gracefully
-      this.logger.warn(`Profile already exists for user ${userId}, returning existing profile`);
-      return existing as Profile;
+      this.logger.warn(
+        `Profile already exists for user ${userId}, returning existing profile`,
+      );
+      return this.mapProfile(existing) as Profile;
     }
 
     // Convert dateOfBirth string to Date
@@ -39,22 +70,25 @@ export class ProfilesService {
 
     // Use findOneAndUpdate with upsert to handle race conditions
     // This ensures that even if two requests arrive simultaneously, only one profile is created
-    const created = await this.profileModel.findOneAndUpdate(
-      { user: new Types.ObjectId(userId) },
-      profileData,
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    ).lean().exec();
+    const created = await this.profileModel
+      .findOneAndUpdate(
+        { user: new Types.ObjectId(userId) },
+        profileData,
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      )
+      .exec();
 
     if (!created) {
       throw new Error('Failed to create profile');
     }
 
-    return created as Profile;
+    return this.mapProfile(created) as Profile;
   }
 
   async findByUserId(userId: string): Promise<Profile | null> {
     if (!Types.ObjectId.isValid(userId)) return null;
-    return this.profileModel.findOne({ user: userId }).lean().exec();
+    const doc = await this.profileModel.findOne({ user: userId }).exec();
+    return this.mapProfile(doc);
   }
 
   /**
@@ -63,7 +97,8 @@ export class ProfilesService {
    */
   async findByProfileId(profileId: string): Promise<Profile | null> {
     if (!Types.ObjectId.isValid(profileId)) return null;
-    return this.profileModel.findById(profileId).lean().exec();
+    const doc = await this.profileModel.findById(profileId).exec();
+    return this.mapProfile(doc);
   }
 
   /**
@@ -76,13 +111,16 @@ export class ProfilesService {
     if (!Types.ObjectId.isValid(idOrUserId)) return null;
 
     // Try direct profile id match first
-    const byId = await this.profileModel.findById(idOrUserId).lean().exec();
+    const byId = await this.profileModel.findById(idOrUserId).exec();
     if (byId) {
-      return byId as Profile;
+      return this.mapProfile(byId) as Profile;
     }
 
     // Fallback: treat as user id (legacy behavior)
-    return this.profileModel.findOne({ user: idOrUserId }).lean().exec();
+    const byUser = await this.profileModel
+      .findOne({ user: idOrUserId })
+      .exec();
+    return this.mapProfile(byUser);
   }
 
   async upsert(userId: string): Promise<ProfileDocument> {
@@ -177,12 +215,11 @@ export class ProfilesService {
         { $set: updateData },
         { upsert: true, new: true },
       )
-      .lean()
       .exec();
 
     if (!updated) throw new NotFoundException('Profile not found');
 
-    return updated;
+    return this.mapProfile(updated) as Profile;
   }
 
   async updatePhoto(userId: string, upload: UploadResult): Promise<Profile> {
@@ -190,7 +227,7 @@ export class ProfilesService {
       throw new NotFoundException('User not found');
     }
 
-    const existing = await this.profileModel.findOne({ user: userId }).lean().exec();
+    const existing = await this.profileModel.findOne({ user: userId }).exec();
 
     const updated = await this.profileModel
       .findOneAndUpdate(
@@ -205,7 +242,6 @@ export class ProfilesService {
         },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
-      .lean()
       .exec();
 
     if (!updated) throw new NotFoundException('Profile not found');
@@ -220,7 +256,7 @@ export class ProfilesService {
       );
     }
 
-    return updated;
+    return this.mapProfile(updated) as Profile;
   }
 
   private async cleanupPreviousPhoto(publicId: string): Promise<void> {
