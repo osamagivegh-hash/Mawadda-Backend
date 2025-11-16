@@ -95,8 +95,12 @@ export class SearchService {
       }
 
       // Determine target gender: male → female, female → male
-      const targetGender = currentProfile.gender === 'male' ? 'female' : 'male';
+      // Normalize gender to lowercase for comparison
+      const currentGender = (currentProfile.gender || '').toString().toLowerCase().trim();
+      const targetGender = currentGender === 'male' ? 'female' : 'male';
       
+      console.log('Current user gender (raw):', currentProfile.gender);
+      console.log('Current user gender (normalized):', currentGender);
       console.log('TARGET GENDER:', targetGender);
 
       // Build simple profile filter
@@ -111,13 +115,17 @@ export class SearchService {
       if (filters.maxAge !== undefined) {
         const minDob = new Date(today);
         minDob.setFullYear(minDob.getFullYear() - filters.maxAge);
+        minDob.setHours(0, 0, 0, 0);
         dobRange.$gte = minDob;
+        console.log(`maxAge=${filters.maxAge} → minDob (born after): ${minDob.toISOString()}`);
       }
 
       if (filters.minAge !== undefined) {
         const maxDob = new Date(today);
         maxDob.setFullYear(maxDob.getFullYear() - filters.minAge);
+        maxDob.setHours(23, 59, 59, 999);
         dobRange.$lte = maxDob;
+        console.log(`minAge=${filters.minAge} → maxDob (born before): ${maxDob.toISOString()}`);
       }
 
       if (Object.keys(dobRange).length > 0) {
@@ -125,15 +133,17 @@ export class SearchService {
       }
 
       // Add optional filters only if provided and not empty/"all"
+      // Use exact match for structured fields
       const addFilter = (key: keyof SearchMembersDto, field: string) => {
         const value = filters[key];
         if (value !== undefined && value !== null) {
           if (typeof value === 'string') {
             const trimmed = value.trim();
             if (trimmed.length > 0 && trimmed.toLowerCase() !== 'all') {
+              // Use exact match - database values should match exactly
               profileFilter[field] = trimmed;
             }
-          } else {
+          } else if (typeof value === 'number') {
             profileFilter[field] = value;
           }
         }
@@ -172,10 +182,71 @@ export class SearchService {
 
       console.log('FINAL PROFILE FILTER:', JSON.stringify(profileFilter, null, 2));
 
+      // Debug: Check how many profiles match gender only (case-insensitive)
+      const genderOnlyCount = await this.profileModel.countDocuments({ 
+        gender: { $regex: new RegExp(`^${targetGender}$`, 'i') }
+      });
+      console.log(`Profiles with gender="${targetGender}" (case-insensitive): ${genderOnlyCount}`);
+      
+      // Also check exact match
+      const exactGenderCount = await this.profileModel.countDocuments({ gender: targetGender });
+      console.log(`Profiles with gender="${targetGender}" (exact): ${exactGenderCount}`);
+      
+      // Check what gender values actually exist in DB
+      const allGenders = await this.profileModel.distinct('gender');
+      console.log('All gender values in database:', allGenders);
+
+      // Debug: Check profiles with dateOfBirth if age filter exists
+      if (profileFilter.dateOfBirth) {
+        const dobFilterCount = await this.profileModel.countDocuments({
+          gender: targetGender,
+          dateOfBirth: profileFilter.dateOfBirth,
+        });
+        console.log(`Profiles matching gender + dateOfBirth: ${dobFilterCount}`);
+        
+        // Check if dateOfBirth field exists in profiles
+        const profilesWithDob = await this.profileModel.countDocuments({
+          gender: targetGender,
+          dateOfBirth: { $exists: true, $ne: null },
+        });
+        console.log(`Profiles with gender="${targetGender}" and dateOfBirth exists: ${profilesWithDob}`);
+      }
+      
+      // Debug: Show what optional filters are being applied
+      const optionalFilters = Object.keys(profileFilter).filter(k => k !== 'gender' && k !== 'dateOfBirth' && k !== '$or');
+      if (optionalFilters.length > 0) {
+        console.log('Optional filters applied:', optionalFilters.map(k => `${k}=${JSON.stringify(profileFilter[k])}`));
+      } else {
+        console.log('No optional filters applied - searching with gender + age only');
+      }
+
       // Simple Profile.find() query - no aggregation, no pipelines
-      const profiles = await this.profileModel.find(profileFilter).lean().exec();
+      let profiles = await this.profileModel.find(profileFilter).lean().exec();
+      console.log(`Found ${profiles.length} profiles matching all filters`);
+      
+      // If no results with exact gender match, try case-insensitive
+      if (profiles.length === 0 && profileFilter.gender) {
+        console.log('Trying case-insensitive gender match as fallback...');
+        const fallbackFilter = { ...profileFilter };
+        fallbackFilter.gender = { $regex: new RegExp(`^${targetGender}$`, 'i') };
+        profiles = await this.profileModel.find(fallbackFilter).lean().exec();
+        console.log(`Found ${profiles.length} profiles with case-insensitive gender`);
+      }
 
       if (profiles.length === 0) {
+        // Debug: Try to find what's wrong
+        console.log('DEBUG: No profiles found. Checking individual filter components...');
+        
+        // Check if any profiles exist with target gender
+        const anyGenderProfiles = await this.profileModel.find({ gender: targetGender }).limit(3).lean().exec();
+        console.log(`Sample profiles with target gender:`, anyGenderProfiles.map(p => ({
+          id: p._id.toString(),
+          gender: p.gender,
+          dateOfBirth: p.dateOfBirth,
+          city: p.city,
+          nationality: p.nationality,
+        })));
+        
         return [];
       }
 
@@ -190,7 +261,10 @@ export class SearchService {
           )
       )];
 
+      console.log(`Found ${userIds.length} unique user IDs from profiles (excluding current user)`);
+
       if (userIds.length === 0) {
+        console.log('DEBUG: No user IDs found after filtering. All profiles might belong to current user.');
         return [];
       }
 
@@ -204,9 +278,17 @@ export class SearchService {
         .lean()
         .exec();
 
+      console.log(`Found ${users.length} active users out of ${userIds.length} user IDs`);
+
       // Create user lookup map
       const userMap = new Map<string, any>();
       users.forEach(u => userMap.set(u._id.toString(), u));
+      
+      // Debug: Check which user IDs are missing
+      const missingUserIds = userIds.filter(id => !userMap.has(id));
+      if (missingUserIds.length > 0) {
+        console.log(`DEBUG: ${missingUserIds.length} user IDs not found or not active:`, missingUserIds.slice(0, 5));
+      }
 
       // Build results and calculate age
       const now = new Date();
@@ -232,14 +314,14 @@ export class SearchService {
         }
 
         results.push({
-          user: {
+        user: {
             id: userDoc._id.toString(),
             email: userDoc.email,
             role: userDoc.role,
             status: userDoc.status,
             memberId: userDoc.memberId,
-          },
-          profile: {
+        },
+        profile: {
             id: p._id.toString(),
             firstName: p.firstName,
             lastName: p.lastName,
