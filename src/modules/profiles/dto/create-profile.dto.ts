@@ -5,11 +5,17 @@ import {
   IsDateString,
   MinLength,
 } from 'class-validator';
+import {
+  GENDERS,
+  RELIGIOSITY_LEVELS,
+  MARITAL_STATUSES,
+  RELIGIONS,
+} from '../profile-options';
 
 export class CreateProfileDto {
   @IsString()
   @IsNotEmpty()
-  @IsIn(['male', 'female'], {
+  @IsIn(GENDERS, {
     message: 'gender must be either "male" or "female"',
   })
   gender: string;
@@ -31,6 +37,9 @@ export class CreateProfileDto {
 
   @IsString()
   @IsNotEmpty()
+  @IsIn(MARITAL_STATUSES, {
+    message: 'maritalStatus must be one of the predefined values',
+  })
   maritalStatus: string;
 
   @IsString()
@@ -42,8 +51,16 @@ export class CreateProfileDto {
   occupation: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsIn(RELIGIOSITY_LEVELS, {
+    message: 'religiosityLevel must be one of the predefined values',
+  })
   religiosityLevel: string;
+
+  @IsString()
+  @IsIn(RELIGIONS, {
+    message: 'religion must be one of the predefined values',
+  })
+  religion?: string;
 
   @IsString()
   @MinLength(2)

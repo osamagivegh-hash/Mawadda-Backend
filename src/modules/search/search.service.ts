@@ -338,28 +338,58 @@ export class SearchService {
 
       // Optional filters - only add if provided
       if (filters.city && filters.city.trim().length > 0 && filters.city.trim().toLowerCase() !== 'all') {
-        profileMatch.city = { $regex: filters.city.trim(), $options: 'i' };
+        profileMatch.city = filters.city.trim();
         console.log(`\n[OPTIONAL] Adding city filter: "${filters.city.trim()}"`);
       }
 
       if (filters.nationality && filters.nationality.trim().length > 0 && filters.nationality.trim().toLowerCase() !== 'all') {
-        profileMatch.nationality = { $regex: filters.nationality.trim(), $options: 'i' };
+        profileMatch.nationality = filters.nationality.trim();
         console.log(`[OPTIONAL] Adding nationality filter: "${filters.nationality.trim()}"`);
       }
 
       if (filters.education && filters.education.trim().length > 0 && filters.education.trim().toLowerCase() !== 'all') {
-        profileMatch.education = { $regex: filters.education.trim(), $options: 'i' };
+        profileMatch.education = filters.education.trim();
         console.log(`[OPTIONAL] Adding education filter: "${filters.education.trim()}"`);
       }
 
+      if (filters.occupation && filters.occupation.trim().length > 0 && filters.occupation.trim().toLowerCase() !== 'all') {
+        profileMatch.occupation = filters.occupation.trim();
+        console.log(`[OPTIONAL] Adding occupation filter: "${filters.occupation.trim()}"`);
+      }
+
       if (filters.maritalStatus && filters.maritalStatus.trim().length > 0 && filters.maritalStatus.trim().toLowerCase() !== 'all') {
-        profileMatch.maritalStatus = { $regex: filters.maritalStatus.trim(), $options: 'i' };
+        profileMatch.maritalStatus = filters.maritalStatus.trim();
         console.log(`[OPTIONAL] Adding maritalStatus filter: "${filters.maritalStatus.trim()}"`);
       }
 
       if (filters.countryOfResidence && filters.countryOfResidence.trim().length > 0 && filters.countryOfResidence.trim().toLowerCase() !== 'all') {
-        profileMatch.countryOfResidence = { $regex: filters.countryOfResidence.trim(), $options: 'i' };
+        profileMatch.countryOfResidence = filters.countryOfResidence.trim();
         console.log(`[OPTIONAL] Adding countryOfResidence filter: "${filters.countryOfResidence.trim()}"`);
+      }
+
+      if (filters.religion && filters.religion.trim().length > 0 && filters.religion.trim().toLowerCase() !== 'all') {
+        profileMatch.religion = filters.religion.trim();
+        console.log(`[OPTIONAL] Adding religion filter: "${filters.religion.trim()}"`);
+      }
+
+      if (filters.religiosityLevel && filters.religiosityLevel.trim().length > 0 && filters.religiosityLevel.trim().toLowerCase() !== 'all') {
+        profileMatch.religiosityLevel = filters.religiosityLevel.trim();
+        console.log(`[OPTIONAL] Adding religiosityLevel filter: "${filters.religiosityLevel.trim()}"`);
+      }
+
+      if (filters.marriageType && filters.marriageType.trim().length > 0 && filters.marriageType.trim().toLowerCase() !== 'all') {
+        profileMatch.marriageType = filters.marriageType.trim();
+        console.log(`[OPTIONAL] Adding marriageType filter: "${filters.marriageType.trim()}"`);
+      }
+
+      if (filters.polygamyAcceptance && filters.polygamyAcceptance.trim().length > 0 && filters.polygamyAcceptance.trim().toLowerCase() !== 'all') {
+        profileMatch.polygamyAcceptance = filters.polygamyAcceptance.trim();
+        console.log(`[OPTIONAL] Adding polygamyAcceptance filter: "${filters.polygamyAcceptance.trim()}"`);
+      }
+
+      if (filters.compatibilityTest && filters.compatibilityTest.trim().length > 0 && filters.compatibilityTest.trim().toLowerCase() !== 'all') {
+        profileMatch.compatibilityTest = filters.compatibilityTest.trim();
+        console.log(`[OPTIONAL] Adding compatibilityTest filter: "${filters.compatibilityTest.trim()}"`);
       }
 
       if (filters.height !== undefined && filters.height > 0) {

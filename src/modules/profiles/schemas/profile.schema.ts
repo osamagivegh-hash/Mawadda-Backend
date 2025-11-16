@@ -1,5 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import {
+  GENDERS,
+  RELIGIONS,
+  RELIGIOSITY_LEVELS,
+  MARITAL_STATUSES,
+  MARRIAGE_TYPES,
+  POLYGAMY_OPTIONS,
+  CompatibilityOption,
+} from '../profile-options';
 
 export type ProfileDocument = HydratedDocument<Profile>;
 
@@ -30,7 +39,7 @@ export class Profile {
   @Prop({
     type: String,
     required: true,
-    enum: ['male', 'female'],
+    enum: GENDERS,
     trim: true,
   })
   gender: string;
@@ -59,17 +68,17 @@ export class Profile {
   @Prop()
   religion?: string;
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: true, enum: MARITAL_STATUSES })
   maritalStatus: string;
 
-  @Prop()
+  @Prop({ type: String, enum: MARRIAGE_TYPES })
   marriageType?: string;
 
-  @Prop()
+  @Prop({ type: String, enum: POLYGAMY_OPTIONS })
   polygamyAcceptance?: string;
 
-  @Prop()
-  compatibilityTest?: string;
+  @Prop({ type: String })
+  compatibilityTest?: CompatibilityOption;
 
   @Prop()
   countryOfResidence?: string;
@@ -97,3 +106,18 @@ export class Profile {
 }
 
 export const ProfileSchema = SchemaFactory.createForClass(Profile);
+
+// Indexes for fast search on structured fields
+ProfileSchema.index({ gender: 1 });
+ProfileSchema.index({ nationality: 1 });
+ProfileSchema.index({ city: 1 });
+ProfileSchema.index({ countryOfResidence: 1 });
+ProfileSchema.index({ education: 1 });
+ProfileSchema.index({ occupation: 1 });
+ProfileSchema.index({ religiosityLevel: 1 });
+ProfileSchema.index({ religion: 1 });
+ProfileSchema.index({ maritalStatus: 1 });
+ProfileSchema.index({ marriageType: 1 });
+ProfileSchema.index({ polygamyAcceptance: 1 });
+ProfileSchema.index({ compatibilityTest: 1 });
+ProfileSchema.index({ dateOfBirth: 1 });

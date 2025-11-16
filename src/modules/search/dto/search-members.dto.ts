@@ -41,6 +41,10 @@ export class SearchMembersDto {
 
   @IsOptional()
   @IsString()
+  occupation?: string;
+
+  @IsOptional()
+  @IsString()
   maritalStatus?: string;
 
   @IsOptional()
@@ -65,6 +69,10 @@ export class SearchMembersDto {
   @IsOptional()
   @IsString()
   religion?: string;
+
+  @IsOptional()
+  @IsString()
+  religiosityLevel?: string;
 
   @IsOptional()
   @IsString()
