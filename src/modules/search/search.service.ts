@@ -119,11 +119,9 @@ export class SearchService {
     filters: SearchMembersDto,
     excludeUserId?: string,
   ): Promise<SearchResult[]> {
-    // ==================== DEBUG START ====================
     console.log('\n========== SEARCH START ==========');
     console.log('Raw filters received:', JSON.stringify(filters, null, 2));
     console.log('Exclude user ID:', excludeUserId);
-    // ==================== DEBUG END ====================
     
     try {
       // Validate required fields
@@ -139,462 +137,184 @@ export class SearchService {
 
       // Normalize input gender
       const normalizedGender = this.normalizeInputGender(filters.gender);
-      console.log(`\n========== Gender Normalization ==========`);
-      console.log(`Input gender: "${filters.gender}" → Normalized: "${normalizedGender}"`);
+      console.log(`Gender normalization: "${filters.gender}" → "${normalizedGender}"`);
 
-      // ==================== DEBUG START: Check database state ====================
-      const totalProfiles = await this.profileModel.countDocuments();
-      const totalUsers = await this.userModel.countDocuments();
-      const activeUsers = await this.userModel.countDocuments({ status: UserStatus.ACTIVE });
-      console.log(`\nDatabase counts:`);
-      console.log(`- Total profiles: ${totalProfiles}`);
-      console.log(`- Total users: ${totalUsers}`);
-      console.log(`- Active users: ${activeUsers}`);
-      
-      // Check actual gender values in database
-      const actualGenders = await this.profileModel.distinct('gender');
-      console.log(`\nActual gender values in database:`, actualGenders);
-      // ==================== DEBUG END ====================
+      // Build simple profile filter (no aggregation pipeline)
+      const profileFilter: Record<string, unknown> = {
+        gender: normalizedGender,
+      };
 
-      // Build aggregation pipeline
-      const pipeline: any[] = [];
+      // Convert age range to dateOfBirth range
+      // minAge=19, maxAge=43 means:
+      // - born between (today - 43 years) and (today - 19 years)
+      const today = new Date();
+      const dobRange: Record<string, Date> = {};
 
-      // Step 0: Only match profiles with clean data (gender in ["male", "female"] and valid dateOfBirth)
-      // This ensures search only runs on valid profiles
-      pipeline.push({
-        $match: {
-          gender: { $in: ['male', 'female'] },
-          dateOfBirth: { $exists: true, $ne: null },
-        },
-      });
-
-      // Step 1: Normalize gender values in the database using $addFields
-      // This converts Arabic/corrupted values to "male" or "female" before filtering
-      // Using nested $cond for better MongoDB compatibility
-      // Note: With strict schema validation, this normalization should rarely be needed,
-      // but we keep it for backward compatibility with existing data
-      pipeline.push({
-        $addFields: {
-          trimmedGender: {
-            $trim: {
-              input: {
-                $cond: {
-                  if: { $ne: ['$gender', null] },
-                  then: { $toLower: { $toString: '$gender' } },
-                  else: ''
-                }
-              }
-            }
-          }
-        }
-      });
-
-      pipeline.push({
-        $addFields: {
-          normalizedGender: {
-            $cond: {
-              // Check for Arabic "أنثى" (female)
-              if: { $eq: ['$trimmedGender', 'أنثى'] },
-              then: 'female',
-              else: {
-                $cond: {
-                  // Check for Arabic "أنثي" (female variant)
-                  if: { $eq: ['$trimmedGender', 'أنثي'] },
-                  then: 'female',
-                  else: {
-                    $cond: {
-                      // Check for Arabic "ذكر" (male)
-                      if: { $eq: ['$trimmedGender', 'ذكر'] },
-                      then: 'male',
-                      else: {
-                        $cond: {
-                          // Check for Arabic "ذكور" (male plural)
-                          if: { $eq: ['$trimmedGender', 'ذكور'] },
-                          then: 'male',
-                          else: {
-                            $cond: {
-                              // Check if contains "mal" (corrupted male values)
-                              if: { 
-                                $gt: [
-                                  { $indexOfCP: ['$trimmedGender', 'mal'] },
-                                  -1
-                                ]
-                              },
-                              then: 'male',
-                              else: {
-                                $cond: {
-                                  // Check if contains "fem" (corrupted female values)
-                                  if: { 
-                                    $gt: [
-                                      { $indexOfCP: ['$trimmedGender', 'fem'] },
-                                      -1
-                                    ]
-                                  },
-                                  then: 'female',
-                                  else: {
-                                    $cond: {
-                                      // Direct match for "male"
-                                      if: { $eq: ['$trimmedGender', 'male'] },
-                                      then: 'male',
-                                      else: {
-                                        $cond: {
-                                          // Direct match for "female"
-                                          if: { $eq: ['$trimmedGender', 'female'] },
-                                          then: 'female',
-                                          else: {
-                                            $cond: {
-                                              // Single character "m"
-                                              if: { $eq: ['$trimmedGender', 'm'] },
-                                              then: 'male',
-                                              else: {
-                                                $cond: {
-                                                  // Single character "f"
-                                                  if: { $eq: ['$trimmedGender', 'f'] },
-                                                  then: 'female',
-                                                  else: null
-                                                }
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-
-      // Step 2: Calculate age from dateOfBirth using $addFields
-      // If dateOfBirth is missing, age will be null (these profiles are excluded from age filtering)
-      pipeline.push({
-        $addFields: {
-          age: {
-            $cond: {
-              if: { 
-                $and: [
-                  { $ne: ['$dateOfBirth', null] },
-                  { $ne: ['$dateOfBirth', undefined] }
-                ]
-              },
-              then: {
-                $dateDiff: {
-                  startDate: {
-                    $cond: {
-                      if: { $eq: [{ $type: '$dateOfBirth' }, 'string'] },
-                      then: { 
-                        $dateFromString: { 
-                          dateString: '$dateOfBirth',
-                          onError: null,
-                          onNull: null
-                        } 
-                      },
-                      else: '$dateOfBirth'
-                    }
-                  },
-                  endDate: '$$NOW',
-                  unit: 'year'
-                }
-              },
-              else: null
-            }
-          }
-        }
-      });
-
-      // Step 3: Build match conditions - Gender and Age are MANDATORY
-      const profileMatch: Record<string, unknown> = {};
-
-      // Gender filter - MANDATORY - case-insensitive match on normalizedGender
-      profileMatch.normalizedGender = { $regex: `^${normalizedGender.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' };
-      console.log(`\n========== Applying gender filter (MANDATORY) ==========`);
-      console.log(`Searching for normalizedGender: "${normalizedGender}"`);
-
-      // Age filter - MANDATORY - exclude profiles without dateOfBirth (age is null)
-      const ageMatch: Record<string, unknown> = {};
-      if (filters.minAge !== undefined) {
-        ageMatch.$gte = filters.minAge;
-      }
       if (filters.maxAge !== undefined) {
-        ageMatch.$lte = filters.maxAge;
-      }
-      // CRITICAL: Only match profiles that have age calculated (dateOfBirth exists)
-      ageMatch.$ne = null;
-      profileMatch.age = ageMatch;
-      
-      console.log(`\n========== Applying age filter (MANDATORY) ==========`);
-      console.log(`Age range: ${JSON.stringify(ageMatch)}`);
-      console.log(`Note: Profiles without dateOfBirth will be excluded (age is null)`);
-
-      // Optional filters - only add if provided
-      if (filters.city && filters.city.trim().length > 0 && filters.city.trim().toLowerCase() !== 'all') {
-        profileMatch.city = filters.city.trim();
-        console.log(`\n[OPTIONAL] Adding city filter: "${filters.city.trim()}"`);
+        // maxAge=43 → must be born after (today - 43 years)
+        const minDob = new Date(today);
+        minDob.setFullYear(minDob.getFullYear() - filters.maxAge);
+        dobRange.$gte = minDob;
       }
 
-      if (filters.nationality && filters.nationality.trim().length > 0 && filters.nationality.trim().toLowerCase() !== 'all') {
-        profileMatch.nationality = filters.nationality.trim();
-        console.log(`[OPTIONAL] Adding nationality filter: "${filters.nationality.trim()}"`);
+      if (filters.minAge !== undefined) {
+        // minAge=19 → must be born before (today - 19 years)
+        const maxDob = new Date(today);
+        maxDob.setFullYear(maxDob.getFullYear() - filters.minAge);
+        dobRange.$lte = maxDob;
       }
 
-      if (filters.education && filters.education.trim().length > 0 && filters.education.trim().toLowerCase() !== 'all') {
-        profileMatch.education = filters.education.trim();
-        console.log(`[OPTIONAL] Adding education filter: "${filters.education.trim()}"`);
+      if (Object.keys(dobRange).length > 0) {
+        profileFilter.dateOfBirth = dobRange;
       }
 
-      if (filters.occupation && filters.occupation.trim().length > 0 && filters.occupation.trim().toLowerCase() !== 'all') {
-        profileMatch.occupation = filters.occupation.trim();
-        console.log(`[OPTIONAL] Adding occupation filter: "${filters.occupation.trim()}"`);
-      }
+      console.log(`Age range: minAge=${filters.minAge}, maxAge=${filters.maxAge}`);
+      console.log(`DOB range: ${JSON.stringify(dobRange)}`);
 
-      if (filters.maritalStatus && filters.maritalStatus.trim().length > 0 && filters.maritalStatus.trim().toLowerCase() !== 'all') {
-        profileMatch.maritalStatus = filters.maritalStatus.trim();
-        console.log(`[OPTIONAL] Adding maritalStatus filter: "${filters.maritalStatus.trim()}"`);
-      }
+      // Add optional filters only if provided and not empty
+      const addIfPresent = (key: keyof SearchMembersDto, field: string) => {
+        const value = (filters[key] as string | undefined)?.trim();
+        if (value && value.toLowerCase() !== 'all' && value.length > 0) {
+          profileFilter[field] = value;
+        }
+      };
 
-      if (filters.countryOfResidence && filters.countryOfResidence.trim().length > 0 && filters.countryOfResidence.trim().toLowerCase() !== 'all') {
-        profileMatch.countryOfResidence = filters.countryOfResidence.trim();
-        console.log(`[OPTIONAL] Adding countryOfResidence filter: "${filters.countryOfResidence.trim()}"`);
-      }
-
-      if (filters.religion && filters.religion.trim().length > 0 && filters.religion.trim().toLowerCase() !== 'all') {
-        profileMatch.religion = filters.religion.trim();
-        console.log(`[OPTIONAL] Adding religion filter: "${filters.religion.trim()}"`);
-      }
-
-      if (filters.religiosityLevel && filters.religiosityLevel.trim().length > 0 && filters.religiosityLevel.trim().toLowerCase() !== 'all') {
-        profileMatch.religiosityLevel = filters.religiosityLevel.trim();
-        console.log(`[OPTIONAL] Adding religiosityLevel filter: "${filters.religiosityLevel.trim()}"`);
-      }
-
-      if (filters.marriageType && filters.marriageType.trim().length > 0 && filters.marriageType.trim().toLowerCase() !== 'all') {
-        profileMatch.marriageType = filters.marriageType.trim();
-        console.log(`[OPTIONAL] Adding marriageType filter: "${filters.marriageType.trim()}"`);
-      }
-
-      if (filters.polygamyAcceptance && filters.polygamyAcceptance.trim().length > 0 && filters.polygamyAcceptance.trim().toLowerCase() !== 'all') {
-        profileMatch.polygamyAcceptance = filters.polygamyAcceptance.trim();
-        console.log(`[OPTIONAL] Adding polygamyAcceptance filter: "${filters.polygamyAcceptance.trim()}"`);
-      }
-
-      if (filters.compatibilityTest && filters.compatibilityTest.trim().length > 0 && filters.compatibilityTest.trim().toLowerCase() !== 'all') {
-        profileMatch.compatibilityTest = filters.compatibilityTest.trim();
-        console.log(`[OPTIONAL] Adding compatibilityTest filter: "${filters.compatibilityTest.trim()}"`);
-      }
+      addIfPresent('city', 'city');
+      addIfPresent('nationality', 'nationality');
+      addIfPresent('education', 'education');
+      addIfPresent('occupation', 'occupation');
+      addIfPresent('maritalStatus', 'maritalStatus');
+      addIfPresent('countryOfResidence', 'countryOfResidence');
+      addIfPresent('religion', 'religion');
+      addIfPresent('religiosityLevel', 'religiosityLevel');
+      addIfPresent('marriageType', 'marriageType');
+      addIfPresent('polygamyAcceptance', 'polygamyAcceptance');
+      addIfPresent('compatibilityTest', 'compatibilityTest');
 
       if (filters.height !== undefined && filters.height > 0) {
-        profileMatch.height = filters.height;
-        console.log(`[OPTIONAL] Adding height filter: ${filters.height}`);
+        profileFilter.height = filters.height;
+        console.log(`Adding height filter: ${filters.height}`);
       }
 
       if (filters.hasPhoto === 'true') {
-        profileMatch.photoUrl = { $exists: true, $nin: [null, ''] };
-        console.log(`[OPTIONAL] Adding hasPhoto filter: true`);
+        profileFilter.photoUrl = { $exists: true, $nin: [null, ''] };
+        console.log('Adding hasPhoto filter: true');
       }
 
       if (filters.keyword && filters.keyword.trim().length > 0) {
         const keyword = filters.keyword.trim();
-        profileMatch.$or = [
+        profileFilter.$or = [
           { firstName: { $regex: keyword, $options: 'i' } },
           { lastName: { $regex: keyword, $options: 'i' } },
           { about: { $regex: keyword, $options: 'i' } },
           { city: { $regex: keyword, $options: 'i' } },
-          { nationality: { $regex: keyword, $options: 'i' } }
+          { nationality: { $regex: keyword, $options: 'i' } },
         ];
-        console.log(`[OPTIONAL] Adding keyword filter: "${keyword}"`);
+        console.log(`Adding keyword filter: "${keyword}"`);
       }
 
-      // Apply profile match (gender + age + optional filters)
-      pipeline.push({ $match: profileMatch });
-      console.log('\n========== Profile match query (after normalization): ==========');
-      console.log(JSON.stringify(profileMatch, null, 2));
+      console.log('SEARCH PROFILE FILTER:', JSON.stringify(profileFilter, null, 2));
 
-      // ==================== DEBUG START: Test after gender match ====================
-      const genderTestPipeline = [
-        ...pipeline,
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'user',
-            foreignField: '_id',
-            as: 'user'
-          }
-        },
-        { $unwind: '$user' },
-        { 
-          $match: { 
-            'user.status': UserStatus.ACTIVE
-          } 
-        },
-        { $limit: 5 },
-        {
-          $project: {
-            _id: 1,
-            firstName: 1,
-            gender: 1,
-            normalizedGender: 1,
-            age: 1,
-            'user.status': 1
-          }
-        }
-      ];
-      
-      const genderTestResults = await this.profileModel.aggregate(genderTestPipeline);
-      console.log(`\n========== Results count after gender + age match: ${genderTestResults.length} ==========`);
-      if (genderTestResults.length > 0) {
-        console.log('Sample result:', JSON.stringify(genderTestResults[0], null, 2));
-      } else {
-        console.log('⚠️ No results after gender + age filter');
-      }
-      // ==================== DEBUG END ====================
+      // Query profiles directly
+      const profiles = await this.profileModel.find(profileFilter).lean().exec();
+      console.log(`Found ${profiles.length} matching profiles`);
 
-      // Step 4: Lookup users
-      pipeline.push({
-        $lookup: {
-          from: 'users',
-          localField: 'user',
-          foreignField: '_id',
-          as: 'user'
-        }
-      });
-
-      // Step 5: Unwind user array
-      pipeline.push({ $unwind: '$user' });
-
-      // Step 6: Filter active users only
-      pipeline.push({
-        $match: {
-          'user.status': UserStatus.ACTIVE
-        }
-      });
-
-      // ==================== DEBUG START: Test after status filter ====================
-      const afterStatusPipeline = [...pipeline, { $limit: 3 }];
-      const afterStatusResults = await this.profileModel.aggregate(afterStatusPipeline);
-      console.log(`\n========== Results count after status filter: ${afterStatusResults.length} ==========`);
-      if (afterStatusResults.length > 0) {
-        console.log('Sample after status filter:', JSON.stringify(afterStatusResults[0], null, 2));
-      }
-      // ==================== DEBUG END ====================
-
-      // Step 7: Filter by memberId if provided (optional)
-      if (filters.memberId && filters.memberId.trim().length > 0) {
-        pipeline.push({
-          $match: {
-            'user.memberId': { $regex: filters.memberId.trim(), $options: 'i' }
-          }
-        });
-        console.log(`[OPTIONAL] Adding memberId filter: "${filters.memberId.trim()}"`);
+      if (profiles.length === 0) {
+        console.log('No profiles match the filter criteria');
+        return [];
       }
 
-      // Step 8: Exclude current user if provided
+      // Get user IDs from profiles
+      const userIds = profiles
+        .map(p => p.user)
+        .filter((id): id is Types.ObjectId => !!id)
+        .map(id => id.toString());
+
+      const uniqueUserIds = [...new Set(userIds)];
+      console.log(`Looking up ${uniqueUserIds.length} unique users`);
+
+      // Build user query (active users only, exclude current user)
+      const userQuery: any = {
+        _id: { $in: uniqueUserIds.map(id => new Types.ObjectId(id)) },
+        status: UserStatus.ACTIVE,
+      };
+
       if (excludeUserId && Types.ObjectId.isValid(excludeUserId)) {
-        pipeline.push({
-          $match: {
-            'user._id': { $ne: new Types.ObjectId(excludeUserId) }
+        userQuery._id = { 
+          ...userQuery._id,
+          $ne: new Types.ObjectId(excludeUserId) 
+        };
+      }
+
+      console.log('USER QUERY:', JSON.stringify(userQuery, null, 2));
+
+      const users = await this.userModel.find(userQuery).lean().exec();
+      console.log(`Found ${users.length} active users`);
+
+      // Create user lookup map
+      const userMap = new Map<string, any>();
+      users.forEach(u => userMap.set(u._id.toString(), u));
+
+      // Build results and compute age in TypeScript
+      const now = new Date();
+      const results: SearchResult[] = profiles
+        .map(p => {
+          const userDoc = userMap.get(p.user?.toString() ?? '');
+          if (!userDoc) {
+            console.log(`Skipping profile ${p._id} - user not found or not active`);
+            return null;
           }
-        });
-        console.log(`[OPTIONAL] Excluding user ID: ${excludeUserId}`);
-      }
 
-      // Step 9: Project final fields (use original gender, not normalizedGender)
-      pipeline.push({
-        $project: {
-          _id: 1,
-          firstName: 1,
-          lastName: 1,
-          gender: 1,
-          age: 1,
-          nationality: 1,
-          city: 1,
-          countryOfResidence: 1,
-          education: 1,
-          occupation: 1,
-          maritalStatus: 1,
-          marriageType: 1,
-          polygamyAcceptance: 1,
-          compatibilityTest: 1,
-          religion: 1,
-          religiosityLevel: 1,
-          about: 1,
-          photoUrl: 1,
-          dateOfBirth: 1,
-          height: 1,
-          'user._id': 1,
-          'user.email': 1,
-          'user.role': 1,
-          'user.status': 1,
-          'user.memberId': 1
-        }
-      });
+          // Calculate age from dateOfBirth
+          const dob = p.dateOfBirth ? new Date(p.dateOfBirth) : null;
+          let age: number | undefined = undefined;
+          if (dob && !isNaN(dob.getTime())) {
+            age = now.getFullYear() - dob.getFullYear();
+            // Adjust for birthday not yet passed this year
+            const monthDiff = now.getMonth() - dob.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+              age--;
+            }
+          }
 
-      // Step 10: Limit results
-      const limit = filters.limit || 30;
-      pipeline.push({ $limit: limit });
+          return {
+            user: {
+              id: userDoc._id.toString(),
+              email: userDoc.email,
+              role: userDoc.role,
+              status: userDoc.status,
+              memberId: userDoc.memberId,
+            },
+            profile: {
+              id: p._id.toString(),
+              firstName: p.firstName,
+              lastName: p.lastName,
+              gender: p.gender,
+              age,
+              nationality: p.nationality,
+              city: p.city,
+              countryOfResidence: p.countryOfResidence,
+              education: p.education,
+              occupation: p.occupation,
+              maritalStatus: p.maritalStatus,
+              marriageType: p.marriageType,
+              polygamyAcceptance: p.polygamyAcceptance,
+              compatibilityTest: p.compatibilityTest,
+              religion: p.religion,
+              religiosityLevel: p.religiosityLevel,
+              about: p.about,
+              photoUrl: p.photoUrl,
+              dateOfBirth: p.dateOfBirth,
+              height: p.height,
+            },
+          };
+        })
+        .filter((r) => r !== null) as SearchResult[];
 
-      // ==================== DEBUG START: Final pipeline ====================
-      console.log('\n========== Final aggregation pipeline: ==========');
-      console.log(JSON.stringify(pipeline, null, 2));
-      // ==================== DEBUG END ====================
-
-      // Execute aggregation
-      const results = await this.profileModel.aggregate(pipeline);
-
-      // ==================== DEBUG START: Final results ====================
-      console.log(`\n========== Final results: ${results.length} ==========`);
-      if (results.length > 0) {
-        console.log('First result:', JSON.stringify(results[0], null, 2));
-        if (results.length > 1) {
-          console.log('Second result:', JSON.stringify(results[1], null, 2));
-        }
-      } else {
-        console.log('⚠️ NO RESULTS FOUND - Review debug logs above to identify the stage that removed all results');
-      }
+      console.log(`SEARCH RESULTS COUNT: ${results.length}`);
       console.log('========== SEARCH END ==========\n');
-      // ==================== DEBUG END ====================
 
-      // Map results to expected format
-      return results.map((result: any) => ({
-        user: {
-          id: result.user?._id?.toString() || '',
-          email: result.user?.email || '',
-          role: result.user?.role || '',
-          status: result.user?.status || UserStatus.ACTIVE,
-          memberId: result.user?.memberId || '',
-        },
-        profile: {
-          id: result._id?.toString() || '',
-          firstName: result.firstName,
-          lastName: result.lastName,
-          gender: result.gender,
-          age: result.age,
-          nationality: result.nationality,
-          city: result.city,
-          countryOfResidence: result.countryOfResidence,
-          education: result.education,
-          occupation: result.occupation,
-          maritalStatus: result.maritalStatus,
-          marriageType: result.marriageType,
-          polygamyAcceptance: result.polygamyAcceptance,
-          compatibilityTest: result.compatibilityTest,
-          religion: result.religion,
-          religiosityLevel: result.religiosityLevel,
-          about: result.about,
-          photoUrl: result.photoUrl,
-          dateOfBirth: result.dateOfBirth,
-          height: result.height,
-        },
-      }));
+      return results;
 
     } catch (error) {
       console.error('\n========== SEARCH ERROR ==========');
