@@ -57,6 +57,34 @@ export class ProfilesService {
     return this.profileModel.findOne({ user: userId }).lean().exec();
   }
 
+  /**
+   * Finds a profile by its own document id. This is useful when the frontend
+   * stores a dedicated profileId and wants to load that exact profile.
+   */
+  async findByProfileId(profileId: string): Promise<Profile | null> {
+    if (!Types.ObjectId.isValid(profileId)) return null;
+    return this.profileModel.findById(profileId).lean().exec();
+  }
+
+  /**
+   * Flexible lookup that first tries treating the value as a profile id,
+   * and if nothing is found, falls back to treating it as a user id.
+   * This keeps older "by user id" behavior working while enabling
+   * "by profile id" in a backwards-compatible way.
+   */
+  async findByIdOrUserId(idOrUserId: string): Promise<Profile | null> {
+    if (!Types.ObjectId.isValid(idOrUserId)) return null;
+
+    // Try direct profile id match first
+    const byId = await this.profileModel.findById(idOrUserId).lean().exec();
+    if (byId) {
+      return byId as Profile;
+    }
+
+    // Fallback: treat as user id (legacy behavior)
+    return this.profileModel.findOne({ user: idOrUserId }).lean().exec();
+  }
+
   async upsert(userId: string): Promise<ProfileDocument> {
     return this.profileModel
       .findOneAndUpdate(

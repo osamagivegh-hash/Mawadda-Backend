@@ -54,11 +54,14 @@ export class ProfilesController {
     return this.profilesService.create(request.user.id, createProfileDto);
   }
 
-  @Get(':userId')
-  findOne(@Param('userId') userId: string) {
-    // For backwards-compatibility, keep this endpoint which treats
-    // the path parameter as a userId and looks up by user reference.
-    return this.profilesService.findByUserId(userId);
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    // For backwards-compatibility, this endpoint now supports both:
+    // - GET /profiles/{profileId}  -> lookup by profile document id
+    // - GET /profiles/{userId}     -> fallback lookup by user reference
+    // This allows the frontend to safely use a dedicated profileId while
+    // keeping legacy "userId as path param" behavior working.
+    return this.profilesService.findByIdOrUserId(id);
   }
 
   @Patch(':userId')
