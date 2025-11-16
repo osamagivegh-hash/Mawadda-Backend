@@ -31,6 +31,13 @@ export class ProfilesController {
     private readonly uploadsService: UploadsService,
   ) {}
 
+  @Get('me')
+  async getMyProfile(@Req() request: RequestWithUser) {
+    // Use the authenticated user's id from JWT to load their profile.
+    // This avoids relying on any client-provided identifiers.
+    return this.profilesService.findByUserId(request.user.id);
+  }
+
   @Post()
   @UsePipes(new TrimPipe())
   async createProfile(
@@ -49,6 +56,8 @@ export class ProfilesController {
 
   @Get(':userId')
   findOne(@Param('userId') userId: string) {
+    // For backwards-compatibility, keep this endpoint which treats
+    // the path parameter as a userId and looks up by user reference.
     return this.profilesService.findByUserId(userId);
   }
 

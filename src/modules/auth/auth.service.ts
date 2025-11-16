@@ -18,15 +18,27 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const safeUser = await this.usersService.create(registerDto);
 
-    await this.profilesService.update(safeUser.id, {
+    // Ensure the user's basic profile is initialized on registration
+    const profile = await this.profilesService.update(safeUser.id, {
       firstName: registerDto.firstName,
       lastName: registerDto.lastName,
       guardianName: registerDto.guardianName,
       guardianContact: registerDto.guardianContact,
     });
 
+    const profileId =
+      (profile as { id?: string }).id ??
+      // Fallback for lean documents without virtuals
+      ((profile as { _id?: { toString: () => string } })._id?.toString() ??
+        null);
+
     return {
-      user: safeUser,
+      user: {
+        ...safeUser,
+        // Expose canonical identifiers for the frontend
+        id: safeUser.id,
+        profileId,
+      },
       token: await this.generateToken(safeUser),
     };
   }
@@ -47,8 +59,23 @@ export class AuthService {
 
     const safeUser = this.usersService.sanitizeUser(userDocument);
 
+    // Look up existing profile for this user so the frontend can
+    // reliably load the correct profile document after login
+    const existingProfile = await this.profilesService.findByUserId(
+      safeUser.id,
+    );
+
+    const profileId =
+      (existingProfile as { id?: string } | null)?.id ??
+      ((existingProfile as { _id?: { toString: () => string } } | null)?._id?.toString() ??
+        null);
+
     return {
-      user: safeUser,
+      user: {
+        ...safeUser,
+        id: safeUser.id,
+        profileId,
+      },
       token: await this.generateToken(safeUser),
     };
   }
