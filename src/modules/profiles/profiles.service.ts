@@ -95,21 +95,26 @@ export class ProfilesService {
       'guardianName', 'guardianContact'
     ];
     
-    // Process all valid profile fields
+    // Process all valid profile fields that are present in the DTO
+    // CRITICAL: Only process fields that are actually in the DTO (were sent from frontend)
     validProfileFields.forEach((fieldName) => {
-      const value = updateProfileDto[fieldName];
-      // Include ALL fields - even null, undefined, or empty strings
-      if (value === null || value === undefined) {
-        // For null/undefined, set to empty string to clear the field
-        updateData[fieldName] = '';
-      } else if (typeof value === 'string') {
-        // For strings, always include (even if empty after trim)
-        const trimmed = value.trim();
-        updateData[fieldName] = trimmed;
-      } else {
-        // For non-strings (numbers, booleans, etc.), include as-is
-        updateData[fieldName] = value;
+      // Check if field exists in DTO (even if value is empty string)
+      if (fieldName in updateProfileDto) {
+        const value = updateProfileDto[fieldName];
+        // Include ALL fields that are present - even empty strings
+        if (value === null || value === undefined) {
+          // For null/undefined, set to empty string to clear the field
+          updateData[fieldName] = '';
+        } else if (typeof value === 'string') {
+          // For strings, always include (even if empty after trim)
+          const trimmed = value.trim();
+          updateData[fieldName] = trimmed;
+        } else {
+          // For non-strings (numbers, booleans, etc.), include as-is
+          updateData[fieldName] = value;
+        }
       }
+      // If field is NOT in DTO, don't add it to updateData (preserve existing value)
     });
     
     // Also process any other fields that might be in the DTO (for safety)
