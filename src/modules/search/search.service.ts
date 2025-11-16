@@ -96,8 +96,12 @@ export class SearchService {
         .lean()
         .exec();
 
-      if (!currentProfile?.gender) {
-        throw new BadRequestException('User profile gender is missing. Please complete your profile first.');
+      if (!currentProfile) {
+        throw new BadRequestException('User profile not found. Please complete your profile first.');
+      }
+
+      if (!currentProfile.gender || currentProfile.gender.trim().length === 0) {
+        throw new BadRequestException('User profile gender is missing. Please add your gender in your profile first.');
       }
 
       // Determine target search gender: male users search for females, female users search for males
