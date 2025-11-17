@@ -1,4 +1,10 @@
-import { Controller, Get, Query, Req, UseGuards, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SearchService } from './search.service';
 import { SearchMembersDto } from './dto/search-members.dto';
@@ -8,30 +14,22 @@ import { RequestWithUser } from '../auth/interfaces/request-with-user.interface'
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
-  @Get('debug')
-  async debugProfiles() {
-    return this.searchService.debugProfiles();
-  }
-
   @Get()
   @UseGuards(JwtAuthGuard)
-  findMembers(
+  async findMembers(
     @Req() request: RequestWithUser,
-    @Query() filters: SearchMembersDto,
+    @Query() dto: SearchMembersDto,
   ) {
-    // Validate required fields (gender is now automatically determined from user profile)
-    if (!filters.minAge && !filters.maxAge) {
-      throw new BadRequestException('Age range (minAge or maxAge) is required for search');
-    }
+    console.log('SEARCH REQUEST:', JSON.stringify(dto, null, 2));
+    console.log('USER ID:', request.user?.id);
 
-    // Validate age range
-    if (filters.minAge && filters.maxAge && filters.minAge > filters.maxAge) {
-      throw new BadRequestException('Minimum age cannot be greater than maximum age');
-    }
+    const result = await this.searchService.searchMembers(
+      dto,
+      request.user?.id,
+    );
 
-    console.log('Search filters received:', filters);
-    console.log('User ID:', request.user?.id);
-    
-    return this.searchService.searchMembers(filters, request.user?.id);
+    console.log('API RESPONSE:', JSON.stringify(result, null, 2));
+
+    return result;
   }
 }

@@ -36,3 +36,5 @@ print(`   Users with role="user": ${userRoleUsers}`);
 
 print(`\n✅ Database fix completed!`);
 
+
+

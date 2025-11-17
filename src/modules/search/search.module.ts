@@ -1,23 +1,14 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
-import { Profile, ProfileSchema } from '../profiles/schemas/profile.schema';
-import { User, UserSchema } from '../users/schemas/user.schema';
+import { Profile } from '../profiles/entities/profile.entity';
+import { User } from '../users/entities/user.entity';
 
 @Module({
-  imports: [
-    MongooseModule.forFeature([
-      { name: Profile.name, schema: ProfileSchema },
-      { name: User.name, schema: UserSchema },
-    ]),
-  ],
+  imports: [TypeOrmModule.forFeature([Profile, User])],
   controllers: [SearchController],
   providers: [SearchService],
   exports: [SearchService],
 })
 export class SearchModule {}
-
-
-
-

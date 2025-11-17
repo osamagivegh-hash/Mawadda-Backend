@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import configuration from './config/configuration';
@@ -19,7 +19,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { ExamsModule } from './modules/exams/exams.module';
 import { PaymentsModule } from './modules/payments/payments.module';
-import { DatabaseIndexService } from './database/create-indexes';
+import { User } from './modules/users/entities/user.entity';
+import { Profile } from './modules/profiles/entities/profile.entity';
 
 @Module({
   imports: [
@@ -28,11 +29,10 @@ import { DatabaseIndexService } from './database/create-indexes';
       load: [configuration],
       validationSchema,
     }),
-    MongooseModule.forRootAsync({
+    TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('database.mongoUri'),
-      }),
+      useFactory: (configService: ConfigService) =>
+        configService.get('database'),
     }),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
@@ -53,6 +53,5 @@ import { DatabaseIndexService } from './database/create-indexes';
     ExamsModule,
     PaymentsModule,
   ],
-  providers: [DatabaseIndexService],
 })
 export class AppModule {}

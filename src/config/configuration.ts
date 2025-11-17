@@ -9,8 +9,6 @@ const configuration = () => {
   const defaultFrontendUrl = 'https://frontend.onrender.com';
   const frontendUrl =
     process.env.FRONTEND_URL ?? corsOrigins[0] ?? defaultFrontendUrl;
-  const mongoUri =
-    process.env.DB_URI ?? process.env.MONGODB_URI ?? '';
 
   return {
     app: {
@@ -34,7 +32,15 @@ const configuration = () => {
       url: frontendUrl,
     },
     database: {
-      mongoUri,
+      type: 'mysql' as const,
+      host: process.env.DB_HOST ?? 'localhost',
+      port: parseInt(process.env.DB_PORT ?? '3306', 10),
+      username: process.env.DB_USERNAME ?? 'root',
+      password: process.env.DB_PASSWORD ?? '',
+      database: process.env.DB_NAME ?? 'mawaddah_db',
+      synchronize: false,
+      ssl: process.env.DB_SSL === 'true' ? {} : false,
+      autoLoadEntities: true,
     },
     uploads: {
       cloudinary: {

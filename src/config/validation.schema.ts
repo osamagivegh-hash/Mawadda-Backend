@@ -6,8 +6,12 @@ export const validationSchema = Joi.object({
   JWT_SECRET: Joi.string().min(16).default('change-me-in-production'),
   JWT_EXPIRES_IN: Joi.string().default('1d'),
   BCRYPT_SALT_ROUNDS: Joi.number().integer().min(4).default(10),
-  MONGODB_URI: Joi.string().uri(),
-  DB_URI: Joi.string().uri(),
+  DB_HOST: Joi.string().default('localhost'),
+  DB_PORT: Joi.number().integer().default(3306),
+  DB_USERNAME: Joi.string().required(),
+  DB_PASSWORD: Joi.string().required(),
+  DB_NAME: Joi.string().required(),
+  DB_SSL: Joi.string().valid('true', 'false').optional(),
   CORS_ORIGINS: Joi.string().optional(),
   FRONTEND_URL: Joi.string()
     .uri()
@@ -22,4 +26,4 @@ export const validationSchema = Joi.object({
   MEMBERSHIP_PAYMENT_URL: Joi.string().uri().optional(),
   EXAM_PAYMENT_URL: Joi.string().uri().optional(),
   PAYMENT_SECRET_KEY: Joi.string().optional(),
-}).or('MONGODB_URI', 'DB_URI');
+});

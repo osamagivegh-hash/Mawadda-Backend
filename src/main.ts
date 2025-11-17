@@ -22,19 +22,10 @@ async function bootstrap() {
 
   app.setGlobalPrefix(globalPrefix);
   app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-      if (originWhitelist.includes('*') || originWhitelist.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(
-        new Error(`Origin ${origin} is not allowed by CORS policy`),
-        false,
-      );
-    },
-    credentials: true,
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: false,
   });
   app.useGlobalPipes(
     new ValidationPipe({

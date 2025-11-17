@@ -1,14 +1,14 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProfilesService } from './profiles.service';
 import { ProfilesController } from './profiles.controller';
-import { Profile, ProfileSchema } from './schemas/profile.schema';
+import { Profile } from './entities/profile.entity';
 import { UsersModule } from '../users/users.module';
 import { UploadsModule } from '../../uploads/uploads.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Profile.name, schema: ProfileSchema }]),
+    TypeOrmModule.forFeature([Profile]),
     forwardRef(() => UsersModule),
     UploadsModule,
   ],
