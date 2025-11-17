@@ -116,7 +116,7 @@ export class SearchService {
       }
     }
 
-    const today = new Date();
+      const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     if (dto.maxAge !== undefined) {
@@ -210,33 +210,33 @@ export class SearchService {
 
     const [profiles, total] = await qb.getManyAndCount();
 
-    const now = new Date();
-    const results: SearchResult[] = [];
-
+      const now = new Date();
+      const results: SearchResult[] = [];
+      
     for (const profile of profiles) {
       if (!profile.user || profile.user.status !== UserStatus.ACTIVE) {
         continue;
       }
 
       const dob = profile.dateOfBirth ? new Date(profile.dateOfBirth) : null;
-      let age: number | undefined = undefined;
-      if (dob && !isNaN(dob.getTime())) {
-        age = now.getFullYear() - dob.getFullYear();
-        const monthDiff = now.getMonth() - dob.getMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
-          age--;
+        let age: number | undefined = undefined;
+        if (dob && !isNaN(dob.getTime())) {
+          age = now.getFullYear() - dob.getFullYear();
+          const monthDiff = now.getMonth() - dob.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+            age--;
+          }
         }
-      }
 
-      results.push({
-        user: {
+        results.push({
+          user: {
           id: profile.user.id,
           email: profile.user.email,
           role: profile.user.role,
           status: profile.user.status,
           memberId: profile.user.memberId,
-        },
-        profile: {
+          },
+          profile: {
           id: profile.id,
           firstName: profile.firstName,
           lastName: profile.lastName,
@@ -258,9 +258,9 @@ export class SearchService {
           photoUrl: profile.photoUrl,
           dateOfBirth: profile.dateOfBirth,
           isVerified: profile.isVerified,
-        },
-      });
-    }
+          },
+        });
+      }
 
     const lastPage = Math.ceil(total / perPage);
 
