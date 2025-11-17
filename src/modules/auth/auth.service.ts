@@ -5,6 +5,7 @@ import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ProfilesService } from '../profiles/profiles.service';
+import { UserStatus } from '../users/schemas/user.schema';
 import type { SafeUser } from '../users/users.service';
 
 @Injectable()
@@ -24,6 +25,11 @@ export class AuthService {
       lastName: registerDto.lastName,
       guardianName: registerDto.guardianName,
       guardianContact: registerDto.guardianContact,
+    });
+
+    // Ensure user status is ACTIVE after profile creation
+    await this.usersService.update(safeUser.id, {
+      status: UserStatus.ACTIVE,
     });
 
     const profileId =

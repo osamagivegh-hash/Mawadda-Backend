@@ -44,10 +44,8 @@ export class UsersService {
       ...createUserDto,
       password: passwordHash,
       memberId,
-      status:
-        createUserDto.role === UserRole.ADMIN
-          ? UserStatus.ACTIVE
-          : UserStatus.PENDING,
+      role: createUserDto.role || UserRole.USER, // Default to USER if not specified
+      status: UserStatus.ACTIVE, // All new users are ACTIVE by default
     });
     return this.sanitizeUser(created);
   }

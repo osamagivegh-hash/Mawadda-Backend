@@ -4,10 +4,10 @@ import { HydratedDocument, Types } from 'mongoose';
 export type UserDocument = HydratedDocument<User>;
 
 export enum UserRole {
-  FEMALE = 'female',
-  MALE = 'male',
+  USER = 'user',
   CONSULTANT = 'consultant',
   ADMIN = 'admin',
+  SUPER_ADMIN = 'superAdmin',
 }
 
 export enum UserStatus {
@@ -47,7 +47,7 @@ export class User {
   @Prop({
     type: String,
     enum: Object.values(UserStatus),
-    default: UserStatus.PENDING,
+    default: UserStatus.ACTIVE, // Set to ACTIVE by default for new users
   })
   status: UserStatus;
 
