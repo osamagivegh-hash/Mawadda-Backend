@@ -54,14 +54,34 @@ export class SearchService {
 
       // CRITICAL: Get logged-in user's profile to determine target gender
       // We MUST use profiles.gender, NEVER users.role
+      console.log('SEARCH: Looking for profile with user ID:', excludeUserId);
+      const userIdObject = new Types.ObjectId(excludeUserId);
+      console.log('SEARCH: Converted to ObjectId:', userIdObject.toString());
+      
       const myProfile = await this.profileModel
-        .findOne({ user: new Types.ObjectId(excludeUserId) })
+        .findOne({ user: userIdObject })
         .lean()
         .exec();
 
-      if (!myProfile || !myProfile.gender) {
+      console.log('SEARCH: Profile found:', myProfile ? 'YES' : 'NO');
+      if (myProfile) {
+        console.log('SEARCH: Profile data:', {
+          id: myProfile._id?.toString(),
+          userId: myProfile.user?.toString(),
+          gender: myProfile.gender,
+          hasGender: !!myProfile.gender,
+        });
+      }
+
+      if (!myProfile) {
         throw new BadRequestException(
-          'User profile missing gender. Please complete your profile first.',
+          'User profile not found. Please complete your profile first by visiting the profile page.',
+        );
+      }
+
+      if (!myProfile.gender) {
+        throw new BadRequestException(
+          'User profile missing gender. Please add your gender in the profile page.',
         );
       }
 

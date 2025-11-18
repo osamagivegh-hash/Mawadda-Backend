@@ -4,6 +4,7 @@ import {
   Query,
   Req,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SearchService } from './search.service';
@@ -21,11 +22,16 @@ export class SearchController {
     @Query() dto: SearchMembersDto,
   ) {
     console.log('SEARCH REQUEST:', JSON.stringify(dto, null, 2));
-    console.log('USER ID:', request.user?.id);
+    console.log('USER ID from request:', request.user?.id);
+    console.log('USER object:', JSON.stringify(request.user, null, 2));
+
+    if (!request.user?.id) {
+      throw new BadRequestException('User ID not found in request. Please log in again.');
+    }
 
     const result = await this.searchService.searchMembers(
       dto,
-      request.user?.id,
+      request.user.id,
     );
 
     console.log('API RESPONSE:', JSON.stringify(result, null, 2));
