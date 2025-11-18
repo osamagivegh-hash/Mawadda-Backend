@@ -4,6 +4,11 @@ import { Model, Types } from 'mongoose';
 import { Profile, ProfileDocument } from '../profiles/schemas/profile.schema';
 import { SearchMembersDto } from './dto/search-members.dto';
 import { User, UserStatus, UserDocument } from '../users/schemas/user.schema';
+import {
+  normalizeMaritalStatusForGender,
+  getMaritalStatusesForGender,
+  isMaritalStatusValidForGender,
+} from '../profiles/marital-status-utils';
 
 type SearchResult = {
   user: {
@@ -131,38 +136,6 @@ export class SearchService {
         }
       }
 
-      // Gender-specific marital status mapping
-      // Maps gender-inappropriate statuses to correct ones based on target gender
-      const normalizeMaritalStatus = (status: string, targetGender: string): string => {
-        if (!status || status === 'all' || status === '') {
-          return status;
-        }
-
-        // Status mappings: female-specific → male-specific and vice versa
-        const statusMap: Record<string, { female: string; male: string }> = {
-          'عزباء': { female: 'عزباء', male: 'أعزب' },
-          'أعزب': { female: 'عزباء', male: 'أعزب' },
-          'مطلقة': { female: 'مطلقة', male: 'مطلق' },
-          'مطلق': { female: 'مطلقة', male: 'مطلق' },
-          'أرملة': { female: 'أرملة', male: 'أرمل' },
-          'أرمل': { female: 'أرملة', male: 'أرمل' },
-        };
-
-        // For statuses with children info, keep them as-is (they're gender-neutral)
-        if (status.includes('بدون أولاد') || status.includes('مع أولاد') || status.includes('منفصل')) {
-          return status;
-        }
-
-        // Map the status based on target gender
-        const mapped = statusMap[status];
-        if (mapped) {
-          return targetGender === 'female' ? mapped.female : mapped.male;
-        }
-
-        // If no mapping found, return as-is (might be a valid gender-neutral status)
-        return status;
-      };
-
       // Optional exact-match filters
       const addIfPresent = (key: keyof SearchMembersDto, field: string) => {
         const val = filters[key];
@@ -177,37 +150,29 @@ export class SearchService {
       addIfPresent('occupation', 'occupation');
       addIfPresent('religiosityLevel', 'religiosityLevel');
       
-      // Handle marital status with gender normalization and flexible matching
+      // Handle marital status with STRICT gender-specific matching
+      // NO MORE $in logic that mixes genders - use only correct gender-specific statuses
       if (filters.maritalStatus && filters.maritalStatus !== 'all' && filters.maritalStatus !== '') {
-        const originalStatus = filters.maritalStatus;
-        const normalizedStatus = normalizeMaritalStatus(originalStatus, targetGender);
+        const validStatuses = getMaritalStatusesForGender(targetGender);
         
-        // For unmarried status variants, search for both to handle database inconsistencies
-        // Database might have "أعزب" for both genders or "عزباء" for females
-        if (originalStatus === 'عزباء' || originalStatus === 'أعزب' || 
-            normalizedStatus === 'عزباء' || normalizedStatus === 'أعزب') {
-          // Search for both variants when looking for unmarried status
-          profileFilter.maritalStatus = { $in: ['عزباء', 'أعزب'] };
-          console.log(`MARITAL STATUS FLEXIBLE SEARCH (unmarried): "${originalStatus}" → searching for both "عزباء" and "أعزب" (target: ${targetGender})`);
-        } 
-        // For divorced status variants
-        else if (originalStatus === 'مطلقة' || originalStatus === 'مطلق' || 
-                 normalizedStatus === 'مطلقة' || normalizedStatus === 'مطلق') {
-          // Search for both variants when looking for divorced status
-          profileFilter.maritalStatus = { $in: ['مطلقة', 'مطلق'] };
-          console.log(`MARITAL STATUS FLEXIBLE SEARCH (divorced): "${originalStatus}" → searching for both "مطلقة" and "مطلق" (target: ${targetGender})`);
-        } 
-        // For widowed status variants
-        else if (originalStatus === 'أرملة' || originalStatus === 'أرمل' || 
-                 normalizedStatus === 'أرملة' || normalizedStatus === 'أرمل') {
-          // Search for both variants when looking for widowed status
-          profileFilter.maritalStatus = { $in: ['أرملة', 'أرمل'] };
-          console.log(`MARITAL STATUS FLEXIBLE SEARCH (widowed): "${originalStatus}" → searching for both "أرملة" and "أرمل" (target: ${targetGender})`);
-        } 
-        // For other statuses (with children info, etc.), use exact match
-        else {
+        // Normalize the input status to match target gender
+        // This handles cases where frontend sends wrong status
+        const normalizedStatus = normalizeMaritalStatusForGender(
+          filters.maritalStatus,
+          targetGender,
+        );
+        
+        // Only use the status if it's valid for the target gender
+        if (normalizedStatus && validStatuses.includes(normalizedStatus as any)) {
           profileFilter.maritalStatus = normalizedStatus;
-          console.log(`MARITAL STATUS EXACT MATCH: "${originalStatus}" → "${normalizedStatus}" (target: ${targetGender})`);
+          console.log(
+            `MARITAL STATUS STRICT MATCH: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender})`,
+          );
+        } else {
+          // If status doesn't match target gender, ignore it (don't search by marital status)
+          console.warn(
+            `MARITAL STATUS IGNORED: "${filters.maritalStatus}" is not valid for target gender ${targetGender}`,
+          );
         }
       }
       
@@ -269,16 +234,13 @@ export class SearchService {
       console.log('NOT FILTERING BY USER.ROLE');
       console.log('FINAL PROFILE FILTER:', JSON.stringify(profileFilter, null, 2));
 
-      // Get total count before pagination
-      const total = await this.profileModel.countDocuments(profileFilter);
-      console.log('TOTAL RESULTS (before pagination):', total);
-
       // Pagination
       const page = filters.page ?? 1;
       const perPage = filters.per_page ?? 20;
       const skip = (page - 1) * perPage;
 
-      // Execute query
+      // Execute query with pagination
+      // Note: Gender filter is already in profileFilter, so only correct gender profiles are returned
       const profiles = await this.profileModel
         .find(profileFilter)
         .sort({ createdAt: -1 })
@@ -287,7 +249,7 @@ export class SearchService {
         .lean()
         .exec();
 
-      console.log(`FOUND ${profiles.length} PROFILES`);
+      console.log(`FOUND ${profiles.length} PROFILES (page ${page}, ${perPage} per page)`);
 
       // Get unique user IDs from profiles
       const userIds = [...new Set(
@@ -328,16 +290,45 @@ export class SearchService {
       const userMap = new Map<string, any>();
       users.forEach(u => userMap.set(u._id.toString(), u));
 
-      // Build results with age calculation
+      // Build results with age calculation and GENDER VALIDATION
+      // CRITICAL: Filter out any profiles that don't match target gender
+      // This is a safety check in case database has incorrect data
       const now = new Date();
       const results: SearchResult[] = [];
 
       for (const p of profiles) {
+        // STRICT GENDER CHECK: Skip if profile gender doesn't match target
+        if (p.gender !== targetGender) {
+          console.warn(
+            `SKIPPING PROFILE: Gender mismatch - profile has "${p.gender}" but target is "${targetGender}" (profile ID: ${p._id})`,
+          );
+          continue;
+        }
+
         const userId = p.user?.toString();
         const userDoc = userId ? userMap.get(userId) : null;
 
         if (!userDoc) {
           continue; // Skip if user not found or not active
+        }
+
+        // Normalize marital status for display (fix any incorrect stored data)
+        const normalizedMaritalStatus = p.maritalStatus
+          ? normalizeMaritalStatusForGender(p.maritalStatus, p.gender as 'male' | 'female')
+          : p.maritalStatus;
+
+        // Validate marital status matches gender (additional safety check)
+        if (
+          normalizedMaritalStatus &&
+          !isMaritalStatusValidForGender(
+            normalizedMaritalStatus,
+            p.gender as 'male' | 'female',
+          )
+        ) {
+          console.warn(
+            `SKIPPING PROFILE: Invalid marital status "${p.maritalStatus}" for gender "${p.gender}" (profile ID: ${p._id})`,
+          );
+          continue;
         }
 
         // Calculate age from dateOfBirth
@@ -370,7 +361,8 @@ export class SearchService {
             countryOfResidence: p.countryOfResidence,
             education: p.education,
             occupation: p.occupation,
-            maritalStatus: p.maritalStatus,
+            // Use normalized marital status (corrected for gender)
+            maritalStatus: normalizedMaritalStatus,
             marriageType: p.marriageType,
             polygamyAcceptance: p.polygamyAcceptance,
             compatibilityTest: p.compatibilityTest,
@@ -384,8 +376,14 @@ export class SearchService {
         });
       }
 
-      console.log(`RETURNING ${results.length} SEARCH RESULTS`);
-
+      console.log(`RETURNING ${results.length} SEARCH RESULTS (after gender/maritalStatus validation)`);
+      
+      // Get total count of all matching profiles (for pagination)
+      // This counts all profiles matching the filter, not just the current page
+      // Gender filter ensures only correct gender profiles are counted
+      const total = await this.profileModel.countDocuments(profileFilter);
+      console.log(`TOTAL MATCHING PROFILES (all pages): ${total}`);
+      
       // Calculate pagination meta
       const lastPage = Math.ceil(total / perPage);
 
@@ -397,6 +395,8 @@ export class SearchService {
           current_page: page,
           last_page: lastPage,
           per_page: perPage,
+          // Total count of all matching profiles (across all pages)
+          // Gender filter in profileFilter ensures this is accurate
           total,
         },
       };
