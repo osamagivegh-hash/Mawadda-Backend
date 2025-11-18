@@ -14,7 +14,6 @@ export type ReligiosityLevel = (typeof RELIGIOSITY_LEVELS)[number];
 
 export const MARITAL_STATUSES = [
   'أعزب',
-  'عزباء',
   'مطلق - بدون أولاد',
   'مطلق - مع أولاد',
   'منفصل بدون طلاق',

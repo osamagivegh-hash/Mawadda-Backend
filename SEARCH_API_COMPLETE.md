@@ -81,7 +81,7 @@ Headers: Authorization: Bearer <token>
         "occupation": "معلمة",
         "religiosityLevel": "ملتزم",
         "religion": "الإسلام",
-        "maritalStatus": "عزباء",
+        "maritalStatus": "أعزب",
         "marriageType": "زواج تقليدي",
         "polygamyAcceptance": "حسب الظروف",
         "compatibilityTest": "نعم",

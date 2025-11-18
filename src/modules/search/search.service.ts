@@ -111,6 +111,38 @@ export class SearchService {
         }
       }
 
+      // Gender-specific marital status mapping
+      // Maps gender-inappropriate statuses to correct ones based on target gender
+      const normalizeMaritalStatus = (status: string, targetGender: string): string => {
+        if (!status || status === 'all' || status === '') {
+          return status;
+        }
+
+        // Status mappings: female-specific → male-specific and vice versa
+        const statusMap: Record<string, { female: string; male: string }> = {
+          'عزباء': { female: 'عزباء', male: 'أعزب' },
+          'أعزب': { female: 'عزباء', male: 'أعزب' },
+          'مطلقة': { female: 'مطلقة', male: 'مطلق' },
+          'مطلق': { female: 'مطلقة', male: 'مطلق' },
+          'أرملة': { female: 'أرملة', male: 'أرمل' },
+          'أرمل': { female: 'أرملة', male: 'أرمل' },
+        };
+
+        // For statuses with children info, keep them as-is (they're gender-neutral)
+        if (status.includes('بدون أولاد') || status.includes('مع أولاد') || status.includes('منفصل')) {
+          return status;
+        }
+
+        // Map the status based on target gender
+        const mapped = statusMap[status];
+        if (mapped) {
+          return targetGender === 'female' ? mapped.female : mapped.male;
+        }
+
+        // If no mapping found, return as-is (might be a valid gender-neutral status)
+        return status;
+      };
+
       // Optional exact-match filters
       const addIfPresent = (key: keyof SearchMembersDto, field: string) => {
         const val = filters[key];
@@ -124,7 +156,14 @@ export class SearchService {
       addIfPresent('education', 'education');
       addIfPresent('occupation', 'occupation');
       addIfPresent('religiosityLevel', 'religiosityLevel');
-      addIfPresent('maritalStatus', 'maritalStatus');
+      
+      // Handle marital status with gender normalization
+      if (filters.maritalStatus && filters.maritalStatus !== 'all' && filters.maritalStatus !== '') {
+        const normalizedStatus = normalizeMaritalStatus(filters.maritalStatus, targetGender);
+        profileFilter.maritalStatus = normalizedStatus;
+        console.log(`MARITAL STATUS NORMALIZATION: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender})`);
+      }
+      
       addIfPresent('countryOfResidence', 'countryOfResidence');
       addIfPresent('marriageType', 'marriageType');
       addIfPresent('polygamyAcceptance', 'polygamyAcceptance');
