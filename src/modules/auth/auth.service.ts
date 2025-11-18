@@ -45,7 +45,7 @@ export class AuthService {
         id: safeUser.id,
         profileId,
       },
-      token: await this.generateToken(safeUser),
+      token: await this.generateToken(safeUser, profileId),
     };
   }
 
@@ -82,15 +82,22 @@ export class AuthService {
         id: safeUser.id,
         profileId,
       },
-      token: await this.generateToken(safeUser),
+      token: await this.generateToken(safeUser, profileId),
     };
   }
 
-  private async generateToken(user: SafeUser) {
-    return this.jwtService.signAsync({
+  private async generateToken(user: SafeUser, profileId?: string | null) {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       role: user.role,
-    });
+    };
+    
+    // Add profileId to JWT if available
+    if (profileId) {
+      payload.profileId = profileId;
+    }
+    
+    return this.jwtService.signAsync(payload);
   }
 }

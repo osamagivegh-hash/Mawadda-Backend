@@ -48,6 +48,7 @@ export class SearchService {
   async searchMembers(
     filters: SearchMembersDto,
     excludeUserId?: string,
+    profileId?: string,
   ): Promise<SearchResponse> {
     console.log('SEARCH FILTER INPUT:', JSON.stringify(filters, null, 2));
 
@@ -60,33 +61,103 @@ export class SearchService {
       // CRITICAL: Get logged-in user's profile to determine target gender
       // We MUST use profiles.gender, NEVER users.role
       console.log('SEARCH: Looking for profile with user ID:', excludeUserId);
-      const userIdObject = new Types.ObjectId(excludeUserId);
-      console.log('SEARCH: Converted to ObjectId:', userIdObject.toString());
+      console.log('SEARCH: Profile ID from request:', profileId);
       
-      const myProfile = await this.profileModel
-        .findOne({ user: userIdObject })
-        .lean()
-        .exec();
+      let myProfile = null;
+      
+      // Method 1: Try to find by profile ID if provided (most reliable)
+      if (profileId && Types.ObjectId.isValid(profileId)) {
+        console.log('SEARCH: Trying to find profile by profile ID:', profileId);
+        myProfile = await this.profileModel
+          .findById(new Types.ObjectId(profileId))
+          .lean()
+          .exec();
+        
+        if (myProfile) {
+          console.log('SEARCH: Found profile by profile ID');
+        }
+      }
+      
+      // Method 2: Try to find by user ID
+      if (!myProfile) {
+        const userIdObject = new Types.ObjectId(excludeUserId);
+        console.log('SEARCH: Converted to ObjectId:', userIdObject.toString());
+        console.log('SEARCH: Trying to find profile by user ID');
+        
+        myProfile = await this.profileModel
+          .findOne({ user: userIdObject })
+          .lean()
+          .exec();
+        
+        if (myProfile) {
+          console.log('SEARCH: Found profile by user ID');
+        }
+      }
+
+      // Method 3: If not found, try alternative search methods
+      if (!myProfile) {
+        console.log('SEARCH: Profile not found by user ID or profile ID, trying alternative search...');
+        
+        // Try finding by user field as string
+        const allProfiles = await this.profileModel
+          .find({})
+          .select('_id user gender')
+          .lean()
+          .exec();
+        
+        console.log(`SEARCH: Found ${allProfiles.length} total profiles in database`);
+        console.log('SEARCH: Searching for user ID:', excludeUserId);
+        console.log('SEARCH: Sample profile user IDs:', allProfiles.slice(0, 5).map(p => ({
+          profileId: p._id?.toString(),
+          userId: p.user?.toString(),
+        })));
+        
+        // Try to find profile where user.toString() matches
+        const foundProfile = allProfiles.find(p => {
+          if (!p.user) return false;
+          const userStr = p.user.toString();
+          const excludeStr = excludeUserId.toString();
+          return userStr === excludeStr;
+        });
+        
+        if (foundProfile) {
+          console.log('SEARCH: Found profile using string comparison method');
+          // Fetch full profile
+          myProfile = await this.profileModel
+            .findById(foundProfile._id)
+            .lean()
+            .exec();
+        }
+      }
 
       console.log('SEARCH: Profile found:', myProfile ? 'YES' : 'NO');
       if (myProfile) {
         console.log('SEARCH: Profile data:', {
           id: myProfile._id?.toString(),
           userId: myProfile.user?.toString(),
+          userIdType: typeof myProfile.user,
           gender: myProfile.gender,
           hasGender: !!myProfile.gender,
         });
+      } else {
+        // Log all profiles for debugging
+        const allProfiles = await this.profileModel.find({}).lean().exec();
+        console.log('SEARCH: All profiles in database:', allProfiles.map(p => ({
+          id: p._id?.toString(),
+          userId: p.user?.toString(),
+          gender: p.gender,
+        })));
       }
 
       if (!myProfile) {
         throw new BadRequestException(
-          'User profile not found. Please complete your profile first by visiting the profile page.',
+          'User profile not found in database. Please create and save your profile first by visiting the profile page.',
         );
       }
 
       if (!myProfile.gender) {
         throw new BadRequestException(
-          'User profile missing gender. Please add your gender in the profile page.',
+          'User profile missing gender. Please add your gender in the profile page and save it.',
         );
       }
 
