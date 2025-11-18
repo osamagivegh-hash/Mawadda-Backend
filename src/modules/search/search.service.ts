@@ -1,40 +1,21 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Profile } from '../profiles/entities/profile.entity';
-import { User, UserStatus } from '../users/entities/user.entity';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { Profile, ProfileDocument } from '../profiles/schemas/profile.schema';
 import { SearchMembersDto } from './dto/search-members.dto';
+import { User, UserStatus, UserDocument } from '../users/schemas/user.schema';
 
 type SearchResult = {
   user: {
-    id: number;
+    id: string;
     email: string;
     role: string;
     status: UserStatus;
     memberId: string;
   };
-  profile: {
-    id: number;
-    firstName?: string;
-    lastName?: string;
-    gender: string;
+  profile: Partial<Profile> & {
+    id: string;
     age?: number;
-    nationality: string;
-    city: string;
-    height?: number;
-    education: string;
-    occupation: string;
-    religiosityLevel: string;
-    religion?: string;
-    maritalStatus: string;
-    marriageType?: string;
-    polygamyAcceptance?: string;
-    compatibilityTest?: string;
-    countryOfResidence?: string;
-    about?: string;
-    photoUrl?: string;
-    dateOfBirth: Date;
-    isVerified: boolean;
   };
 };
 
@@ -53,172 +34,228 @@ type SearchResponse = {
 @Injectable()
 export class SearchService {
   constructor(
-    @InjectRepository(Profile)
-    private readonly profileRepo: Repository<Profile>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectModel(Profile.name)
+    private readonly profileModel: Model<ProfileDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
   ) {}
 
   async searchMembers(
-    dto: SearchMembersDto,
-    excludeUserId?: string | number,
+    filters: SearchMembersDto,
+    excludeUserId?: string,
   ): Promise<SearchResponse> {
-    console.log('SEARCH FILTER INPUT:', JSON.stringify(dto, null, 2));
+    console.log('SEARCH FILTER INPUT:', JSON.stringify(filters, null, 2));
 
-    const page = dto.page ?? 1;
-    const perPage = dto.per_page ?? 20;
+    try {
+      // Validate user ID
+      if (!excludeUserId || !Types.ObjectId.isValid(excludeUserId)) {
+        throw new BadRequestException('User ID is required to determine search gender');
+      }
 
-    // CRITICAL: Get logged-in user's profile to determine target gender
-    // We MUST use profiles.gender, NEVER users.role
-    let targetGender: string | undefined = undefined;
+      // CRITICAL: Get logged-in user's profile to determine target gender
+      // We MUST use profiles.gender, NEVER users.role
+      const myProfile = await this.profileModel
+        .findOne({ user: new Types.ObjectId(excludeUserId) })
+        .lean()
+        .exec();
 
-    if (excludeUserId) {
-      const userIdNum = typeof excludeUserId === 'string' ? parseInt(excludeUserId, 10) : excludeUserId;
-      if (!isNaN(userIdNum)) {
-        const myProfile = await this.profileRepo.findOne({
-          where: { userId: userIdNum },
-        });
+      if (!myProfile || !myProfile.gender) {
+        throw new BadRequestException(
+          'User profile missing gender. Please complete your profile first.',
+        );
+      }
 
-        if (myProfile && myProfile.gender) {
-          // Determine opposite gender: male → female, female → male
-          targetGender = myProfile.gender === 'male' ? 'female' : 'male';
-          console.log('USING PROFILE GENDER:', myProfile.gender);
-          console.log('TARGET GENDER (opposite):', targetGender);
-          console.log('NOT USING USER ROLE FOR GENDER');
-        } else {
-          console.log('WARNING: User profile missing gender. Search may return no results.');
+      // Determine opposite gender: male → female, female → male
+      const targetGender = myProfile.gender === 'male' ? 'female' : 'male';
+      console.log('USING PROFILE GENDER:', myProfile.gender);
+      console.log('TARGET GENDER (opposite):', targetGender);
+      console.log('NOT USING USER ROLE FOR GENDER');
+
+      // Build profile filter - ONLY use Profile model fields
+      const profileFilter: any = {
+        gender: targetGender,
+      };
+
+      // Calculate dateOfBirth range from age filters (Laravel logic)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const dobRange: any = {};
+
+      if (filters.maxAge !== undefined) {
+        // maxAge → birthdate >= (today - maxAge years)
+        const maxAgeDate = new Date(today);
+        maxAgeDate.setFullYear(maxAgeDate.getFullYear() - filters.maxAge);
+        dobRange.$gte = maxAgeDate;
+      }
+
+      if (filters.minAge !== undefined) {
+        // minAge → birthdate <= (today - minAge years)
+        const minAgeDate = new Date(today);
+        minAgeDate.setFullYear(minAgeDate.getFullYear() - filters.minAge);
+        minAgeDate.setHours(23, 59, 59, 999);
+        dobRange.$lte = minAgeDate;
+      }
+
+      if (Object.keys(dobRange).length > 0) {
+        profileFilter.dateOfBirth = dobRange;
+      }
+
+      // Height filters
+      if (filters.minHeight !== undefined || filters.maxHeight !== undefined) {
+        profileFilter.height = {};
+        if (filters.minHeight !== undefined) {
+          profileFilter.height.$gte = filters.minHeight;
+        }
+        if (filters.maxHeight !== undefined) {
+          profileFilter.height.$lte = filters.maxHeight;
         }
       }
-    }
 
-    // Allow explicit gender filter to override automatic detection
-    if (dto.gender && dto.gender !== 'all' && dto.gender !== '') {
-      targetGender = dto.gender;
-      console.log('GENDER FILTER OVERRIDE:', targetGender);
-    }
+      // Optional exact-match filters
+      const addIfPresent = (key: keyof SearchMembersDto, field: string) => {
+        const val = filters[key];
+        if (val && val !== 'all' && val !== '') {
+          profileFilter[field] = val;
+        }
+      };
 
-    const qb = this.profileRepo
-      .createQueryBuilder('profile')
-      .innerJoinAndSelect('profile.user', 'user')
-      .where('user.status = :status', { status: UserStatus.ACTIVE });
+      addIfPresent('city', 'city');
+      addIfPresent('nationality', 'nationality');
+      addIfPresent('education', 'education');
+      addIfPresent('occupation', 'occupation');
+      addIfPresent('religiosityLevel', 'religiosityLevel');
+      addIfPresent('maritalStatus', 'maritalStatus');
+      addIfPresent('countryOfResidence', 'countryOfResidence');
+      addIfPresent('marriageType', 'marriageType');
+      addIfPresent('polygamyAcceptance', 'polygamyAcceptance');
+      addIfPresent('compatibilityTest', 'compatibilityTest');
 
-    // CRITICAL: Filter by profiles.gender, NEVER users.role
-    if (targetGender) {
-      qb.andWhere('profile.gender = :targetGender', { targetGender });
+      // Photo filter
+      if (filters.hasPhoto === 'true') {
+        profileFilter.photoUrl = { $exists: true, $nin: [null, ''] };
+      }
+
+      // Keyword search (first name, last name, about, city, nationality)
+      if (filters.keyword && filters.keyword.trim().length > 0) {
+        const keyword = filters.keyword.trim();
+        profileFilter.$or = [
+          { firstName: { $regex: keyword, $options: 'i' } },
+          { lastName: { $regex: keyword, $options: 'i' } },
+          { about: { $regex: keyword, $options: 'i' } },
+          { city: { $regex: keyword, $options: 'i' } },
+          { nationality: { $regex: keyword, $options: 'i' } },
+        ];
+      }
+
+      // Member ID search - need to fetch users first and match profile.user
+      if (filters.memberId && filters.memberId.trim().length > 0) {
+        const usersWithMemberId = await this.userModel
+          .find({ memberId: filters.memberId.trim() })
+          .select('_id')
+          .lean()
+          .exec();
+        
+        const userIdsToMatch = usersWithMemberId
+          .map(u => u._id)
+          .filter(id => id.toString() !== excludeUserId);
+        
+        if (userIdsToMatch.length === 0) {
+          // No users found with this memberId (excluding current user), return empty result
+          return {
+            status: 'success',
+            filters_received: filters,
+            data: [],
+            meta: {
+              current_page: filters.page ?? 1,
+              last_page: 1,
+              per_page: filters.per_page ?? 20,
+              total: 0,
+            },
+          };
+        }
+        profileFilter.user = { $in: userIdsToMatch };
+      } else {
+        // Exclude current user if no memberId filter
+        profileFilter.user = { $ne: new Types.ObjectId(excludeUserId) };
+      }
+
       console.log('FILTERING BY PROFILE.GENDER:', targetGender);
       console.log('NOT FILTERING BY USER.ROLE');
-    }
+      console.log('FINAL PROFILE FILTER:', JSON.stringify(profileFilter, null, 2));
 
-    if (excludeUserId) {
-      const userIdNum = typeof excludeUserId === 'string' ? parseInt(excludeUserId, 10) : excludeUserId;
-      if (!isNaN(userIdNum)) {
-        qb.andWhere('profile.userId != :excludeUserId', { excludeUserId: userIdNum });
+      // Get total count before pagination
+      const total = await this.profileModel.countDocuments(profileFilter);
+      console.log('TOTAL RESULTS (before pagination):', total);
+
+      // Pagination
+      const page = filters.page ?? 1;
+      const perPage = filters.per_page ?? 20;
+      const skip = (page - 1) * perPage;
+
+      // Execute query
+      const profiles = await this.profileModel
+        .find(profileFilter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(perPage)
+        .lean()
+        .exec();
+
+      console.log(`FOUND ${profiles.length} PROFILES`);
+
+      // Get unique user IDs from profiles
+      const userIds = [...new Set(
+        profiles
+          .map(p => p.user?.toString())
+          .filter((id): id is string =>
+            !!id &&
+            Types.ObjectId.isValid(id) &&
+            id !== excludeUserId
+          )
+      )];
+
+      if (userIds.length === 0) {
+        return {
+          status: 'success',
+          filters_received: filters,
+          data: [],
+          meta: {
+            current_page: page,
+            last_page: 1,
+            per_page: perPage,
+            total: 0,
+          },
+        };
       }
-    }
 
-      const today = new Date();
-    today.setHours(0, 0, 0, 0);
+      // Fetch active users - ONLY after matching profiles
+      const userObjectIds = userIds.map(id => new Types.ObjectId(id));
+      const users = await this.userModel
+        .find({
+          _id: { $in: userObjectIds },
+          status: UserStatus.ACTIVE,
+        })
+        .lean()
+        .exec();
 
-    if (dto.maxAge !== undefined) {
-      const maxAgeDate = new Date(today);
-      maxAgeDate.setFullYear(maxAgeDate.getFullYear() - dto.maxAge);
-      qb.andWhere('profile.dateOfBirth >= :maxAgeDate', { maxAgeDate });
-    }
+      // Create user lookup map
+      const userMap = new Map<string, any>();
+      users.forEach(u => userMap.set(u._id.toString(), u));
 
-    if (dto.minAge !== undefined) {
-      const minAgeDate = new Date(today);
-      minAgeDate.setFullYear(minAgeDate.getFullYear() - dto.minAge);
-      minAgeDate.setHours(23, 59, 59, 999);
-      qb.andWhere('profile.dateOfBirth <= :minAgeDate', { minAgeDate });
-    }
-
-    if (dto.minHeight !== undefined) {
-      qb.andWhere('profile.height >= :minHeight', { minHeight: dto.minHeight });
-    }
-
-    if (dto.maxHeight !== undefined) {
-      qb.andWhere('profile.height <= :maxHeight', { maxHeight: dto.maxHeight });
-    }
-
-    if (dto.city && dto.city !== 'all' && dto.city !== '') {
-      qb.andWhere('profile.city = :city', { city: dto.city });
-    }
-
-    if (dto.nationality && dto.nationality !== 'all' && dto.nationality !== '') {
-      qb.andWhere('profile.nationality = :nationality', { nationality: dto.nationality });
-    }
-
-    if (dto.countryOfResidence && dto.countryOfResidence !== 'all' && dto.countryOfResidence !== '') {
-      qb.andWhere('profile.countryOfResidence = :countryOfResidence', { countryOfResidence: dto.countryOfResidence });
-    }
-
-    if (dto.education && dto.education !== 'all' && dto.education !== '') {
-      qb.andWhere('profile.education = :education', { education: dto.education });
-    }
-
-    if (dto.occupation && dto.occupation !== 'all' && dto.occupation !== '') {
-      qb.andWhere('profile.occupation = :occupation', { occupation: dto.occupation });
-    }
-
-    if (dto.religion && dto.religion !== 'all' && dto.religion !== '') {
-      qb.andWhere('profile.religion = :religion', { religion: dto.religion });
-    }
-
-    if (dto.religiosityLevel && dto.religiosityLevel !== 'all' && dto.religiosityLevel !== '') {
-      qb.andWhere('profile.religiosityLevel = :religiosityLevel', { religiosityLevel: dto.religiosityLevel });
-    }
-
-    if (dto.maritalStatus && dto.maritalStatus !== 'all' && dto.maritalStatus !== '') {
-      qb.andWhere('profile.maritalStatus = :maritalStatus', { maritalStatus: dto.maritalStatus });
-    }
-
-    if (dto.marriageType && dto.marriageType !== 'all' && dto.marriageType !== '') {
-      qb.andWhere('profile.marriageType = :marriageType', { marriageType: dto.marriageType });
-    }
-
-    if (dto.polygamyAcceptance && dto.polygamyAcceptance !== 'all' && dto.polygamyAcceptance !== '') {
-      qb.andWhere('profile.polygamyAcceptance = :polygamyAcceptance', { polygamyAcceptance: dto.polygamyAcceptance });
-    }
-
-    if (dto.compatibilityTest && dto.compatibilityTest !== 'all' && dto.compatibilityTest !== '') {
-      qb.andWhere('profile.compatibilityTest = :compatibilityTest', { compatibilityTest: dto.compatibilityTest });
-    }
-
-    if (dto.hasPhoto === 'true') {
-      qb.andWhere('profile.photoUrl IS NOT NULL AND profile.photoUrl != ""');
-    }
-
-    if (dto.keyword && dto.keyword.trim() !== '') {
-      const keyword = `%${dto.keyword.trim()}%`;
-      qb.andWhere(
-        '(profile.firstName LIKE :keyword OR profile.lastName LIKE :keyword OR profile.about LIKE :keyword OR profile.city LIKE :keyword OR profile.nationality LIKE :keyword)',
-        { keyword },
-      );
-    }
-
-    if (dto.memberId && dto.memberId.trim() !== '') {
-      qb.andWhere('user.memberId = :memberId', { memberId: dto.memberId.trim() });
-    }
-
-    qb.orderBy('profile.createdAt', 'DESC');
-
-    const skip = (page - 1) * perPage;
-    qb.skip(skip).take(perPage);
-
-    console.log('FINAL SQL:', qb.getQuery());
-    console.log('SQL PARAMETERS:', qb.getParameters());
-
-    const [profiles, total] = await qb.getManyAndCount();
-
+      // Build results with age calculation
       const now = new Date();
       const results: SearchResult[] = [];
-      
-    for (const profile of profiles) {
-      if (!profile.user || profile.user.status !== UserStatus.ACTIVE) {
-        continue;
-      }
 
-      const dob = profile.dateOfBirth ? new Date(profile.dateOfBirth) : null;
+      for (const p of profiles) {
+        const userId = p.user?.toString();
+        const userDoc = userId ? userMap.get(userId) : null;
+
+        if (!userDoc) {
+          continue; // Skip if user not found or not active
+        }
+
+        // Calculate age from dateOfBirth
+        const dob = p.dateOfBirth ? new Date(p.dateOfBirth) : null;
         let age: number | undefined = undefined;
         if (dob && !isNaN(dob.getTime())) {
           age = now.getFullYear() - dob.getFullYear();
@@ -230,50 +267,61 @@ export class SearchService {
 
         results.push({
           user: {
-          id: profile.user.id,
-          email: profile.user.email,
-          role: profile.user.role,
-          status: profile.user.status,
-          memberId: profile.user.memberId,
+            id: userDoc._id.toString(),
+            email: userDoc.email,
+            role: userDoc.role,
+            status: userDoc.status,
+            memberId: userDoc.memberId,
           },
           profile: {
-          id: profile.id,
-          firstName: profile.firstName,
-          lastName: profile.lastName,
-          gender: profile.gender,
-          age,
-          nationality: profile.nationality,
-          city: profile.city,
-          height: profile.height,
-          education: profile.education,
-          occupation: profile.occupation,
-          religiosityLevel: profile.religiosityLevel,
-          religion: profile.religion,
-          maritalStatus: profile.maritalStatus,
-          marriageType: profile.marriageType,
-          polygamyAcceptance: profile.polygamyAcceptance,
-          compatibilityTest: profile.compatibilityTest,
-          countryOfResidence: profile.countryOfResidence,
-          about: profile.about,
-          photoUrl: profile.photoUrl,
-          dateOfBirth: profile.dateOfBirth,
-          isVerified: profile.isVerified,
+            id: p._id.toString(),
+            firstName: p.firstName,
+            lastName: p.lastName,
+            gender: p.gender,
+            age,
+            nationality: p.nationality,
+            city: p.city,
+            countryOfResidence: p.countryOfResidence,
+            education: p.education,
+            occupation: p.occupation,
+            maritalStatus: p.maritalStatus,
+            marriageType: p.marriageType,
+            polygamyAcceptance: p.polygamyAcceptance,
+            compatibilityTest: p.compatibilityTest,
+            religion: p.religion,
+            religiosityLevel: p.religiosityLevel,
+            about: p.about,
+            photoUrl: p.photoUrl,
+            dateOfBirth: p.dateOfBirth,
+            height: p.height,
           },
         });
       }
 
-    const lastPage = Math.ceil(total / perPage);
+      console.log(`RETURNING ${results.length} SEARCH RESULTS`);
 
-    return {
-      status: 'success',
-      filters_received: dto,
-      data: results,
-      meta: {
-        current_page: page,
-        last_page: lastPage,
-        per_page: perPage,
-        total,
-      },
-    };
+      // Calculate pagination meta
+      const lastPage = Math.ceil(total / perPage);
+
+      return {
+        status: 'success',
+        filters_received: filters,
+        data: results,
+        meta: {
+          current_page: page,
+          last_page: lastPage,
+          per_page: perPage,
+          total,
+        },
+      };
+    } catch (error) {
+      console.error('SEARCH ERROR:', error);
+
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new BadRequestException('Search failed. Please try again.');
+    }
   }
 }

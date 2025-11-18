@@ -18,11 +18,4 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false
   },
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*.spec.ts",
-    "src/database/create-indexes.ts",
-    "src/database/normalize-gender-and-dob.ts"
-  ]
 }

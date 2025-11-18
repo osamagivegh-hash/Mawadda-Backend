@@ -4,53 +4,73 @@ import { ConfigService } from '@nestjs/config';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const configService = app.get(ConfigService);
-  const { port, globalPrefix } = configService.get('app');
-  const configuredOrigins =
-    configService.get<string[]>('cors.origins') ?? [];
-  const frontendUrl =
-    configService.get<string>('frontend.url') ??
-    'https://frontend.onrender.com';
-  const originWhitelist = Array.from(
-    new Set([
-      'http://localhost:3000',
-      frontendUrl,
-      ...configuredOrigins,
-    ]),
-  );
+  try {
+    console.log('>>> Starting NestJS application...');
+    const app = await NestFactory.create(AppModule);
+    const configService = app.get(ConfigService);
+    const { port, globalPrefix } = configService.get('app');
+    const configuredOrigins =
+      configService.get<string[]>('cors.origins') ?? [];
+    const frontendUrl =
+      configService.get<string>('frontend.url') ??
+      'https://frontend.onrender.com';
+    const originWhitelist = Array.from(
+      new Set([
+        'http://localhost:3000',
+        frontendUrl,
+        ...configuredOrigins,
+      ]),
+    );
 
-  app.setGlobalPrefix(globalPrefix);
-  app.enableCors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false,
-  });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-      forbidNonWhitelisted: false,
-      disableErrorMessages: false,
-      exceptionFactory: (errors) => {
-        const messages = errors.map((error) => {
-          const constraints = error.constraints;
-          if (constraints) {
-            return Object.values(constraints).join(', ');
-          }
-          return `${error.property} has invalid value`;
-        });
-        return new BadRequestException({
-          message: messages.join('; '),
-          error: 'Validation failed',
-          statusCode: 400,
-        });
-      },
-    }),
-  );
+    console.log('>>> Configuration loaded:', {
+      port,
+      globalPrefix,
+      mongoUri: configService.get<string>('database.mongoUri') ? 'Set' : 'Not set',
+      nodeEnv: process.env.NODE_ENV,
+    });
 
-  await app.listen(port);
+    app.setGlobalPrefix(globalPrefix);
+    app.enableCors({
+      origin: '*',
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: false,
+    });
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+        forbidNonWhitelisted: false,
+        disableErrorMessages: false,
+        exceptionFactory: (errors) => {
+          const messages = errors.map((error) => {
+            const constraints = error.constraints;
+            if (constraints) {
+              return Object.values(constraints).join(', ');
+            }
+            return `${error.property} has invalid value`;
+          });
+          return new BadRequestException({
+            message: messages.join('; '),
+            error: 'Validation failed',
+            statusCode: 400,
+          });
+        },
+      }),
+    );
+
+    await app.listen(port);
+    console.log(`>>> Application is running on: http://localhost:${port}/${globalPrefix}`);
+    console.log('>>> Server started successfully!');
+  } catch (error) {
+    console.error('>>> FATAL ERROR during application startup:', error);
+    console.error('>>> Error stack:', error instanceof Error ? error.stack : String(error));
+    process.exit(1);
+  }
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('>>> Unhandled error in bootstrap:', error);
+  process.exit(1);
+});
