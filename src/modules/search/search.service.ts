@@ -157,11 +157,38 @@ export class SearchService {
       addIfPresent('occupation', 'occupation');
       addIfPresent('religiosityLevel', 'religiosityLevel');
       
-      // Handle marital status with gender normalization
+      // Handle marital status with gender normalization and flexible matching
       if (filters.maritalStatus && filters.maritalStatus !== 'all' && filters.maritalStatus !== '') {
-        const normalizedStatus = normalizeMaritalStatus(filters.maritalStatus, targetGender);
-        profileFilter.maritalStatus = normalizedStatus;
-        console.log(`MARITAL STATUS NORMALIZATION: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender})`);
+        const originalStatus = filters.maritalStatus;
+        const normalizedStatus = normalizeMaritalStatus(originalStatus, targetGender);
+        
+        // For unmarried status variants, search for both to handle database inconsistencies
+        // Database might have "أعزب" for both genders or "عزباء" for females
+        if (originalStatus === 'عزباء' || originalStatus === 'أعزب' || 
+            normalizedStatus === 'عزباء' || normalizedStatus === 'أعزب') {
+          // Search for both variants when looking for unmarried status
+          profileFilter.maritalStatus = { $in: ['عزباء', 'أعزب'] };
+          console.log(`MARITAL STATUS FLEXIBLE SEARCH (unmarried): "${originalStatus}" → searching for both "عزباء" and "أعزب" (target: ${targetGender})`);
+        } 
+        // For divorced status variants
+        else if (originalStatus === 'مطلقة' || originalStatus === 'مطلق' || 
+                 normalizedStatus === 'مطلقة' || normalizedStatus === 'مطلق') {
+          // Search for both variants when looking for divorced status
+          profileFilter.maritalStatus = { $in: ['مطلقة', 'مطلق'] };
+          console.log(`MARITAL STATUS FLEXIBLE SEARCH (divorced): "${originalStatus}" → searching for both "مطلقة" and "مطلق" (target: ${targetGender})`);
+        } 
+        // For widowed status variants
+        else if (originalStatus === 'أرملة' || originalStatus === 'أرمل' || 
+                 normalizedStatus === 'أرملة' || normalizedStatus === 'أرمل') {
+          // Search for both variants when looking for widowed status
+          profileFilter.maritalStatus = { $in: ['أرملة', 'أرمل'] };
+          console.log(`MARITAL STATUS FLEXIBLE SEARCH (widowed): "${originalStatus}" → searching for both "أرملة" and "أرمل" (target: ${targetGender})`);
+        } 
+        // For other statuses (with children info, etc.), use exact match
+        else {
+          profileFilter.maritalStatus = normalizedStatus;
+          console.log(`MARITAL STATUS EXACT MATCH: "${originalStatus}" → "${normalizedStatus}" (target: ${targetGender})`);
+        }
       }
       
       addIfPresent('countryOfResidence', 'countryOfResidence');
