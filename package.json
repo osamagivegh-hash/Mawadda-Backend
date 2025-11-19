@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migration:run": "ts-node src/database/migration.command.ts",
     "migration:rollback": "ts-node src/database/migration.command.ts rollback",
-    "seed:profiles": "ts-node src/database/seeds/seed-profiles.ts"
+    "seed:profiles": "ts-node src/database/seeds/seed-profiles.ts",
+    "seed:activate-users": "ts-node src/database/seeds/activate-users.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

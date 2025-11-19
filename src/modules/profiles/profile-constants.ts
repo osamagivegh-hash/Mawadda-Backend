@@ -85,3 +85,5 @@ export type PolygamyOption = (typeof POLYGAMY_OPTIONS)[number];
 export const COMPATIBILITY_OPTIONS = ['نعم', 'لا'] as const;
 export type CompatibilityOption = (typeof COMPATIBILITY_OPTIONS)[number];
 
+
+
