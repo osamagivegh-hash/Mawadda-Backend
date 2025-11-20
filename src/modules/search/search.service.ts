@@ -36,6 +36,56 @@ type SearchResponse = {
   };
 };
 
+const normalizeGender = (rawGender?: string | null): 'male' | 'female' | undefined => {
+  if (!rawGender) return undefined;
+
+  const gender = rawGender.toString().trim().toLowerCase();
+
+  const maleValues = [
+    'male',
+    'm',
+    'ذكر',
+    'ذكور',
+    'راجل',
+    'رجال',
+    'malq',
+    'مالق',
+    'malk',
+    'ذكر ',
+  ];
+
+  const femaleValues = [
+    'female',
+    'f',
+    'انثى',
+    'أنثى',
+    'أنثي',
+    'انثي',
+    'fem',
+    'femael',
+    'femal',
+  ];
+
+  if (maleValues.includes(gender)) return 'male';
+  if (femaleValues.includes(gender)) return 'female';
+
+  return undefined;
+};
+
+const buildGenderVariants = (targetGender: 'male' | 'female') => {
+  const variants =
+    targetGender === 'male'
+      ? ['male', 'Male', 'MALE', 'ذكر', 'ذكور', 'mal', 'malq', 'مالق']
+      : ['female', 'Female', 'FEMALE', 'أنثى', 'انثى', 'أنثي', 'انثي', 'fem', 'femael'];
+
+  // Ensure normalized value is always included for exact matches
+  return Array.from(new Set(variants));
+};
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildExactMatchRegex = (value: string) => new RegExp(`^${escapeRegex(value.trim())}$`, 'i');
+
 @Injectable()
 export class SearchService {
   constructor(
@@ -168,8 +218,9 @@ export class SearchService {
       console.log('NOT USING USER ROLE FOR GENDER');
 
       // Build profile filter - ONLY use Profile model fields
+      const normalizedTargetGender = normalizeGender(targetGender) ?? targetGender;
       const profileFilter: any = {
-        gender: targetGender,
+        gender: { $in: buildGenderVariants(normalizedTargetGender as 'male' | 'female') },
       };
 
       // Calculate dateOfBirth range from age filters (Laravel logic)
@@ -193,7 +244,7 @@ export class SearchService {
       }
 
       if (Object.keys(dobRange).length > 0) {
-        profileFilter.dateOfBirth = dobRange;
+        profileFilter.dateOfBirth = { ...dobRange, $exists: true, $ne: null };
       }
 
       // Height filters
@@ -211,7 +262,7 @@ export class SearchService {
       const addIfPresent = (key: keyof SearchMembersDto, field: string) => {
         const val = filters[key];
         if (val && val !== 'all' && val !== '') {
-          profileFilter[field] = val;
+          profileFilter[field] = buildExactMatchRegex(val as string);
         }
       };
 
@@ -368,8 +419,10 @@ export class SearchService {
       const results: SearchResult[] = [];
 
       for (const p of profiles) {
-        // STRICT GENDER CHECK: Skip if profile gender doesn't match target
-        if (p.gender !== targetGender) {
+        const normalizedProfileGender = normalizeGender(p.gender as string);
+
+        // STRICT GENDER CHECK: Skip if profile gender doesn't match target (after normalization)
+        if (!normalizedProfileGender || normalizedProfileGender !== normalizedTargetGender) {
           console.warn(
             `SKIPPING PROFILE: Gender mismatch - profile has "${p.gender}" but target is "${targetGender}" (profile ID: ${p._id})`,
           );
