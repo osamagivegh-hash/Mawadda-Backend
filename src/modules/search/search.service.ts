@@ -220,8 +220,17 @@ export class SearchService {
 
       // Build profile filter - ONLY use Profile model fields
       const normalizedTargetGender = normalizeGender(targetGender) ?? targetGender;
+      const genderVariants = buildGenderVariants(normalizedTargetGender as 'male' | 'female');
+
+      // Use case-insensitive regex with optional whitespace to match corrupted values
+      // e.g., "Male ", " ذكر". This prevents missing results when genders are stored
+      // with extra spaces or inconsistent casing in the database.
+      const genderRegexVariants = genderVariants.map(
+        v => new RegExp(`^\\s*${escapeRegex(v)}\\s*$`, 'i'),
+      );
+
       const profileFilter: any = {
-        gender: { $in: buildGenderVariants(normalizedTargetGender as 'male' | 'female') },
+        gender: { $in: genderRegexVariants },
       };
 
       // Calculate dateOfBirth range from age filters (Laravel logic)
