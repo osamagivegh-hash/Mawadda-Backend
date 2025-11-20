@@ -8,6 +8,7 @@ import {
   normalizeMaritalStatusForGender,
   getMaritalStatusesForGender,
   isMaritalStatusValidForGender,
+  getMaritalStatusVariants,
 } from '../profiles/marital-status-utils';
 
 type SearchResult = {
@@ -273,22 +274,33 @@ export class SearchService {
       addIfPresent('religiosityLevel', 'religiosityLevel');
       
       // Handle marital status with STRICT gender-specific matching
-      // NO MORE $in logic that mixes genders - use only correct gender-specific statuses
+      // Accept only statuses valid for the target gender, but include the opposite-gender
+      // variant in the filter to catch incorrectly stored data (e.g. female profiles saved
+      // with the male wording).
       if (filters.maritalStatus && filters.maritalStatus !== 'all' && filters.maritalStatus !== '') {
         const validStatuses = getMaritalStatusesForGender(targetGender);
-        
+
         // Normalize the input status to match target gender
         // This handles cases where frontend sends wrong status
         const normalizedStatus = normalizeMaritalStatusForGender(
           filters.maritalStatus,
           targetGender,
         );
-        
+
         // Only use the status if it's valid for the target gender
         if (normalizedStatus && validStatuses.includes(normalizedStatus as any)) {
-          profileFilter.maritalStatus = normalizedStatus;
+          const statusVariants = getMaritalStatusVariants(filters.maritalStatus);
+          if (!statusVariants.includes(normalizedStatus)) {
+            statusVariants.push(normalizedStatus);
+          }
+
+          const uniqueVariants = Array.from(new Set(statusVariants));
+
+          // Use $in only when necessary to catch incorrect variants; otherwise exact match
+          profileFilter.maritalStatus =
+            uniqueVariants.length === 1 ? normalizedStatus : { $in: uniqueVariants };
           console.log(
-            `MARITAL STATUS STRICT MATCH: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender})`,
+            `MARITAL STATUS STRICT MATCH: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender}, variants: ${uniqueVariants.join(', ')})`,
           );
         } else {
           // If status doesn't match target gender, ignore it (don't search by marital status)

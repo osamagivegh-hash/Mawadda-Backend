@@ -28,6 +28,26 @@ export const MALE_MARITAL_STATUSES = [
   'أرمل - مع أولاد',
 ] as const;
 
+// Mapping for gender-specific statuses (with and without children information)
+const STATUS_MAP: Record<string, { female: string; male: string }> = {
+  'عزباء': { female: 'عزباء', male: 'أعزب' },
+  'أعزب': { female: 'عزباء', male: 'أعزب' },
+  'مطلقة': { female: 'مطلقة', male: 'مطلق' },
+  'مطلق': { female: 'مطلقة', male: 'مطلق' },
+  'أرملة': { female: 'أرملة', male: 'أرمل' },
+  'أرمل': { female: 'أرملة', male: 'أرمل' },
+  'مطلقة - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
+  'مطلق - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
+  'مطلقة - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
+  'مطلق - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
+  'منفصلة بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
+  'منفصل بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
+  'أرملة - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
+  'أرمل - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
+  'أرملة - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
+  'أرمل - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
+};
+
 /**
  * Normalize marital status based on profile gender
  * Fixes incorrect data where female profiles have male statuses or vice versa
@@ -36,37 +56,38 @@ export function normalizeMaritalStatusForGender(
   status: string | undefined | null,
   profileGender: 'male' | 'female',
 ): string | undefined {
-  if (!status || status === '') {
+  const trimmedStatus = status?.trim();
+
+  if (!trimmedStatus) {
     return undefined;
   }
 
-  // Mapping for gender-specific statuses (with and without children information)
-  const statusMap: Record<string, { female: string; male: string }> = {
-    'عزباء': { female: 'عزباء', male: 'أعزب' },
-    'أعزب': { female: 'عزباء', male: 'أعزب' },
-    'مطلقة': { female: 'مطلقة', male: 'مطلق' },
-    'مطلق': { female: 'مطلقة', male: 'مطلق' },
-    'أرملة': { female: 'أرملة', male: 'أرمل' },
-    'أرمل': { female: 'أرملة', male: 'أرمل' },
-    'مطلقة - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
-    'مطلق - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
-    'مطلقة - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
-    'مطلق - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
-    'منفصلة بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
-    'منفصل بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
-    'أرملة - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
-    'أرمل - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
-    'أرملة - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
-    'أرمل - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
-  };
-
-  const mapped = statusMap[status];
+  const mapped = STATUS_MAP[trimmedStatus];
   if (mapped) {
     return profileGender === 'female' ? mapped.female : mapped.male;
   }
 
   // If not in map, return as-is (might be valid)
-  return status;
+  return trimmedStatus;
+}
+
+/**
+ * Return both gender-specific variants for a marital status string.
+ * Useful when we need to match incorrectly stored variants while keeping
+ * display/output normalized to the target gender.
+ */
+export function getMaritalStatusVariants(status: string | undefined | null): string[] {
+  const trimmedStatus = status?.trim();
+  if (!trimmedStatus) {
+    return [];
+  }
+
+  const mapped = STATUS_MAP[trimmedStatus];
+  if (!mapped) {
+    return [trimmedStatus];
+  }
+
+  return Array.from(new Set([mapped.female, mapped.male]));
 }
 
 /**
