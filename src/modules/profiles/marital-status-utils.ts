@@ -10,11 +10,11 @@ export const FEMALE_MARITAL_STATUSES = [
   'عزباء',
   'مطلقة',
   'أرملة',
-  'مطلق - بدون أولاد',
-  'مطلق - مع أولاد',
-  'منفصل بدون طلاق',
-  'أرمل - بدون أولاد',
-  'أرمل - مع أولاد',
+  'مطلقة - بدون أولاد',
+  'مطلقة - مع أولاد',
+  'منفصلة بدون طلاق',
+  'أرملة - بدون أولاد',
+  'أرملة - مع أولاد',
 ] as const;
 
 export const MALE_MARITAL_STATUSES = [
@@ -40,16 +40,7 @@ export function normalizeMaritalStatusForGender(
     return undefined;
   }
 
-  // Gender-neutral statuses (with children info) - keep as-is
-  if (
-    status.includes('بدون أولاد') ||
-    status.includes('مع أولاد') ||
-    status.includes('منفصل')
-  ) {
-    return status;
-  }
-
-  // Mapping for gender-specific statuses
+  // Mapping for gender-specific statuses (with and without children information)
   const statusMap: Record<string, { female: string; male: string }> = {
     'عزباء': { female: 'عزباء', male: 'أعزب' },
     'أعزب': { female: 'عزباء', male: 'أعزب' },
@@ -57,6 +48,16 @@ export function normalizeMaritalStatusForGender(
     'مطلق': { female: 'مطلقة', male: 'مطلق' },
     'أرملة': { female: 'أرملة', male: 'أرمل' },
     'أرمل': { female: 'أرملة', male: 'أرمل' },
+    'مطلقة - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
+    'مطلق - بدون أولاد': { female: 'مطلقة - بدون أولاد', male: 'مطلق - بدون أولاد' },
+    'مطلقة - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
+    'مطلق - مع أولاد': { female: 'مطلقة - مع أولاد', male: 'مطلق - مع أولاد' },
+    'منفصلة بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
+    'منفصل بدون طلاق': { female: 'منفصلة بدون طلاق', male: 'منفصل بدون طلاق' },
+    'أرملة - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
+    'أرمل - بدون أولاد': { female: 'أرملة - بدون أولاد', male: 'أرمل - بدون أولاد' },
+    'أرملة - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
+    'أرمل - مع أولاد': { female: 'أرملة - مع أولاد', male: 'أرمل - مع أولاد' },
   };
 
   const mapped = statusMap[status];
