@@ -281,22 +281,18 @@ export class SearchService {
       addIfPresent('education', 'education');
       addIfPresent('occupation', 'occupation');
       addIfPresent('religiosityLevel', 'religiosityLevel');
-      
+
       // Handle marital status with STRICT gender-specific matching
       // Accept only statuses valid for the target gender, but include the opposite-gender
       // variant in the filter to catch incorrectly stored data (e.g. female profiles saved
       // with the male wording).
       if (filters.maritalStatus && filters.maritalStatus !== 'all' && filters.maritalStatus !== '') {
         const validStatuses = getMaritalStatusesForGender(targetGender);
-
-        // Normalize the input status to match target gender
-        // This handles cases where frontend sends wrong status
         const normalizedStatus = normalizeMaritalStatusForGender(
           filters.maritalStatus,
           targetGender,
         );
 
-        // Only use the status if it's valid for the target gender
         if (normalizedStatus && validStatuses.includes(normalizedStatus as any)) {
           const statusVariants = getMaritalStatusVariants(filters.maritalStatus);
           if (!statusVariants.includes(normalizedStatus)) {
@@ -305,11 +301,16 @@ export class SearchService {
 
           const uniqueVariants = Array.from(new Set(statusVariants));
 
-          // Use $in only when necessary to catch incorrect variants; otherwise exact match
-          profileFilter.maritalStatus =
-            uniqueVariants.length === 1 ? normalizedStatus : { $in: uniqueVariants };
+          // FIX: Convert all variants to case-insensitive Regex
+          // This ensures 'Single' matches 'single', 'SINGLE', etc.
+          const statusRegexVariants = uniqueVariants.map(
+            v => new RegExp(`^${escapeRegex(v)}$`, 'i'),
+          );
+
+          profileFilter.maritalStatus = { $in: statusRegexVariants };
+
           console.log(
-            `MARITAL STATUS STRICT MATCH: "${filters.maritalStatus}" → "${normalizedStatus}" (target: ${targetGender}, variants: ${uniqueVariants.join(', ')})`,
+            `MARITAL STATUS REGEX MATCH: "${filters.maritalStatus}" -> Variants: ${uniqueVariants.join(', ')}`,
           );
         } else {
           // If status doesn't match target gender, ignore it (don't search by marital status)
@@ -522,14 +523,37 @@ export class SearchService {
       }
 
       console.log(`RETURNING ${results.length} SEARCH RESULTS (after gender/maritalStatus validation)`);
-      
-      // Get total count of all matching profiles (for pagination)
-      // This counts all profiles matching the filter, not just the current page
-      // Gender filter ensures only correct gender profiles are counted
-      const total = await this.profileModel.countDocuments(profileFilter);
-      console.log(`TOTAL MATCHING PROFILES (all pages): ${total}`);
-      
-      // Calculate pagination meta
+
+      // ===> FIX 2: ACCURATE COUNTING <===
+      // Instead of counting only profiles, we need to count profiles belonging to ACTIVE users.
+      // Using aggregation to filter by user status effectively.
+
+      const countPipeline = [
+        { $match: profileFilter },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'user',
+            foreignField: '_id',
+            as: 'userDoc',
+          },
+        },
+        { $unwind: '$userDoc' },
+        {
+          $match: {
+            'userDoc.status': UserStatus.ACTIVE, // Only count active users
+          },
+        },
+        {
+          $count: 'total',
+        },
+      ];
+
+      const countResult = await this.profileModel.aggregate(countPipeline).exec();
+      const total = countResult.length > 0 ? countResult[0].total : 0;
+
+      console.log(`TOTAL MATCHING ACTIVE PROFILES: ${total}`);
+
       const lastPage = Math.ceil(total / perPage);
 
       return {
